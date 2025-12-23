@@ -3,93 +3,334 @@ project(squeeze2diretta VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Find required packages
-find_package(Threads REQUIRED)
+# ============================================
+# Architecture Detection
+# ============================================
 
-# Check for Diretta SDK
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/diretta-sdk/lib/libDIRETTA.so")
+message(STATUS "")
+message(STATUS "═══════════════════════════════════════════════════════")
+message(STATUS "  squeeze2diretta - Build Configuration")
+message(STATUS "═══════════════════════════════════════════════════════")
+
+execute_process(
+    COMMAND uname -m
+    OUTPUT_VARIABLE UNAME_M
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# Detect base architecture
+if(UNAME_M STREQUAL "x86_64")
+    set(BASE_ARCH "x64")
+    set(ARCH_DESC_BASE "x86_64 (Intel/AMD 64-bit)")
+elseif(UNAME_M STREQUAL "aarch64" OR UNAME_M STREQUAL "arm64")
+    set(BASE_ARCH "aarch64")
+    set(ARCH_DESC_BASE "ARM64 (aarch64)")
+elseif(UNAME_M STREQUAL "armv7l")
+    set(BASE_ARCH "arm")
+    set(ARCH_DESC_BASE "ARM 32-bit (armv7l)")
+    message(WARNING "ARM 32-bit detected but not officially supported by Diretta SDK")
+elseif(UNAME_M STREQUAL "riscv64")
+    set(BASE_ARCH "riscv64")
+    set(ARCH_DESC_BASE "RISC-V 64-bit")
+else()
+    set(BASE_ARCH "unknown")
+    set(ARCH_DESC_BASE "Unknown: ${UNAME_M}")
+endif()
+
+message(STATUS "Architecture: ${ARCH_DESC_BASE}")
+
+# ============================================
+# Architecture-Specific Variant Detection
+# ============================================
+
+if(BASE_ARCH STREQUAL "x64")
+    # x64: Auto-detect CPU capabilities
+    execute_process(
+        COMMAND grep -q avx2 /proc/cpuinfo
+        RESULT_VARIABLE HAS_AVX2_RESULT
+    )
+    execute_process(
+        COMMAND grep -q avx512 /proc/cpuinfo
+        RESULT_VARIABLE HAS_AVX512_RESULT
+    )
+    execute_process(
+        COMMAND sh -c "lscpu 2>/dev/null | grep -qi 'AMD.*Zen 4'"
+        RESULT_VARIABLE IS_ZEN4_RESULT
+    )
+    
+    if(IS_ZEN4_RESULT EQUAL 0)
+        set(DEFAULT_VARIANT "x64-linux-15zen4")
+        set(CPU_DESC "AMD Zen 4 detected")
+    elseif(HAS_AVX512_RESULT EQUAL 0)
+        set(DEFAULT_VARIANT "x64-linux-15v4")
+        set(CPU_DESC "AVX512 detected (x86-64-v4)")
+    elseif(HAS_AVX2_RESULT EQUAL 0)
+        set(DEFAULT_VARIANT "x64-linux-15v3")
+        set(CPU_DESC "AVX2 detected (x86-64-v3)")
+    else()
+        set(DEFAULT_VARIANT "x64-linux-15v2")
+        set(CPU_DESC "Basic x64 (x86-64-v2)")
+    endif()
+    
+elseif(BASE_ARCH STREQUAL "aarch64")
+    # aarch64: Check kernel version
+    execute_process(
+        COMMAND uname -r
+        COMMAND cut -d. -f1-2
+        OUTPUT_VARIABLE KERNEL_VER
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    
+    string(REPLACE "." ";" KERNEL_VER_LIST ${KERNEL_VER})
+    list(GET KERNEL_VER_LIST 0 KERNEL_MAJOR)
+    list(GET KERNEL_VER_LIST 1 KERNEL_MINOR)
+    
+    # Use k16 variant if kernel >= 4.16
+    if((KERNEL_MAJOR GREATER 4) OR (KERNEL_MAJOR EQUAL 4 AND KERNEL_MINOR GREATER_EQUAL 16))
+        set(DEFAULT_VARIANT "aarch64-linux-15k16")
+        set(CPU_DESC "Kernel ${KERNEL_VER} (using k16 variant)")
+    else()
+        set(DEFAULT_VARIANT "aarch64-linux-15")
+        set(CPU_DESC "Kernel ${KERNEL_VER} (using standard variant)")
+    endif()
+    
+elseif(BASE_ARCH STREQUAL "riscv64")
+    set(DEFAULT_VARIANT "riscv64-linux-15")
+    set(CPU_DESC "RISC-V 64-bit")
+    
+else()
+    set(DEFAULT_VARIANT "unknown")
+    set(CPU_DESC "Unknown architecture")
+endif()
+
+# Allow manual override via -DARCH_NAME=...
+if(NOT DEFINED ARCH_NAME)
+    set(FULL_VARIANT ${DEFAULT_VARIANT})
+else()
+    set(FULL_VARIANT ${ARCH_NAME})
+endif()
+
+message(STATUS "Variant: ${FULL_VARIANT}")
+message(STATUS "CPU: ${CPU_DESC}")
+
+# ============================================
+# Diretta SDK Auto-Detection
+# ============================================
+
+if(DEFINED ENV{DIRETTA_SDK_PATH})
+    set(SDK_PATH $ENV{DIRETTA_SDK_PATH})
+    message(STATUS "✓ Using SDK from environment: ${SDK_PATH}")
+else()
+    # Search in common locations
+    set(SDK_SEARCH_PATHS
+        "$ENV{HOME}/DirettaHostSDK_147"
+        "${CMAKE_SOURCE_DIR}/DirettaHostSDK_147"
+        "${CMAKE_SOURCE_DIR}/../DirettaHostSDK_147"
+        "/opt/DirettaHostSDK_147"
+        "$ENV{HOME}/audio/DirettaHostSDK_147"
+        "/usr/local/DirettaHostSDK_147"
+    )
+    
+    foreach(path ${SDK_SEARCH_PATHS})
+        if(EXISTS "${path}")
+            set(SDK_PATH "${path}")
+            break()
+        endif()
+    endforeach()
+    
+    if(NOT DEFINED SDK_PATH)
+        message(FATAL_ERROR 
+            "\n"
+            "═══════════════════════════════════════════════════════\n"
+            "  ❌ Diretta SDK not found!\n"
+            "═══════════════════════════════════════════════════════\n"
+            "\n"
+            "Searched in:\n"
+            "  ${SDK_SEARCH_PATHS}\n"
+            "\n"
+            "Please:\n"
+            "  1. Download SDK from: https://www.diretta.link/hostsdk.html\n"
+            "  2. Extract to one of the above locations, OR\n"
+            "  3. Set environment variable: export DIRETTA_SDK_PATH=/path/to/sdk\n"
+        )
+    else()
+        message(STATUS "✓ SDK auto-detected: ${SDK_PATH}")
+    endif()
+endif()
+
+# ============================================
+# Construct Library Names
+# ============================================
+
+set(DIRETTA_LIB_NAME "libDirettaHost_${FULL_VARIANT}.a")
+set(ACQUA_LIB_NAME "libACQUA_${FULL_VARIANT}.a")
+
+# Full paths to libraries
+set(SDK_LIB_DIRETTA "${SDK_PATH}/lib/${DIRETTA_LIB_NAME}")
+set(SDK_LIB_ACQUA "${SDK_PATH}/lib/${ACQUA_LIB_NAME}")
+
+# ============================================
+# Verify SDK Installation
+# ============================================
+
+if(NOT EXISTS "${SDK_LIB_DIRETTA}")
+    # List available variants
+    file(GLOB AVAILABLE_LIBS "${SDK_PATH}/lib/libDirettaHost_*.a")
+    set(AVAILABLE_VARIANTS "")
+    foreach(lib ${AVAILABLE_LIBS})
+        get_filename_component(lib_name ${lib} NAME)
+        string(REGEX REPLACE "libDirettaHost_(.*)\\.a" "\\1" variant ${lib_name})
+        list(APPEND AVAILABLE_VARIANTS "  ✓ ${variant}")
+    endforeach()
+    string(REPLACE ";" "\n" AVAILABLE_VARIANTS_STR "${AVAILABLE_VARIANTS}")
+    
     message(FATAL_ERROR 
         "\n"
         "═══════════════════════════════════════════════════════\n"
-        "  Diretta SDK NOT FOUND!\n"
+        "  ❌ Required library not found: ${DIRETTA_LIB_NAME}\n"
         "═══════════════════════════════════════════════════════\n"
         "\n"
-        "Please download the Diretta Host SDK from:\n"
-        "  https://www.diretta.link/hostsdk.html\n"
+        "Path checked: ${SDK_LIB_DIRETTA}\n"
         "\n"
-        "Extract to: ${CMAKE_SOURCE_DIR}/diretta-sdk/\n"
+        "📝 Available libraries in SDK:\n"
+        "${AVAILABLE_VARIANTS_STR}\n"
         "\n"
-        "Expected structure:\n"
-        "  diretta-sdk/\n"
-        "    ├── include/\n"
-        "    │   ├── DIRETTA/\n"
-        "    │   └── ACQUA/\n"
-        "    └── lib/\n"
-        "        ├── libDIRETTA.so\n"
-        "        └── libACQUA.so\n"
+        "💡 Common solutions:\n"
+        "\n"
+        "  For Raspberry Pi:\n"
+        "    cmake -DARCH_NAME=aarch64-linux-15 ..\n"
+        "    cmake -DARCH_NAME=aarch64-linux-15k16 ..\n"
+        "\n"
+        "  For x64 systems:\n"
+        "    cmake -DARCH_NAME=x64-linux-15v2 ..       # Baseline\n"
+        "    cmake -DARCH_NAME=x64-linux-15v3 ..       # AVX2 (most common)\n"
+        "    cmake -DARCH_NAME=x64-linux-15v4 ..       # AVX512\n"
+        "    cmake -DARCH_NAME=x64-linux-15zen4 ..     # AMD Ryzen 7000+\n"
+        "\n"
+        "  For RISC-V:\n"
+        "    cmake -DARCH_NAME=riscv64-linux-15 ..\n"
     )
 endif()
 
-# Include directories
+if(NOT EXISTS "${SDK_LIB_ACQUA}")
+    message(WARNING "⚠️  ACQUA library not found: ${ACQUA_LIB_NAME}")
+endif()
+
+if(NOT EXISTS "${SDK_PATH}/Host/Diretta/SyncBuffer")
+    message(FATAL_ERROR "❌ SDK headers not found at: ${SDK_PATH}/Host/")
+endif()
+
+message(STATUS "✓ SDK validation passed")
+message(STATUS "Library: ${DIRETTA_LIB_NAME}")
+message(STATUS "")
+message(STATUS "═══════════════════════════════════════════════════════")
+message(STATUS "")
+
+# ============================================
+# Find Required Packages
+# ============================================
+
+find_package(Threads REQUIRED)
+
+# ============================================
+# Include Directories
+# ============================================
+
 include_directories(
     ${CMAKE_SOURCE_DIR}/diretta
-    ${CMAKE_SOURCE_DIR}/diretta-sdk/include
+    ${SDK_PATH}/Host
 )
 
-# Link directories
+# ============================================
+# Link Directories
+# ============================================
+
 link_directories(
-    ${CMAKE_SOURCE_DIR}/diretta-sdk/lib
+    ${SDK_PATH}/lib
 )
 
+# ============================================
 # Sources
+# ============================================
+
 set(WRAPPER_SOURCES
     squeeze2diretta-wrapper.cpp
     diretta/DirettaOutputSimple.cpp
 )
 
-# Create executable
+# ============================================
+# Create Executable
+# ============================================
+
 add_executable(squeeze2diretta
     ${WRAPPER_SOURCES}
 )
 
-# Link libraries
+# ============================================
+# Link Libraries
+# ============================================
+
 target_link_libraries(squeeze2diretta
     ${CMAKE_THREAD_LIBS_INIT}
-    DIRETTA
-    ACQUA
+    ${SDK_LIB_DIRETTA}
     dl
 )
 
-# Compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
+# Link ACQUA if available
+if(EXISTS "${SDK_LIB_ACQUA}")
+    target_link_libraries(squeeze2diretta ${SDK_LIB_ACQUA})
+    message(STATUS "✓ ACQUA library will be linked")
+endif()
 
+# ============================================
+# Compiler Flags
+# ============================================
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# ============================================
 # Install
+# ============================================
+
 install(TARGETS squeeze2diretta DESTINATION bin)
 
-# Install wrapper script that ensures squeezelite is available
-install(FILES ${CMAKE_SOURCE_DIR}/scripts/squeeze2diretta-check.sh 
-        DESTINATION bin
-        PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
-                    GROUP_EXECUTE GROUP_READ
-                    WORLD_EXECUTE WORLD_READ)
+# ============================================
+# Print Summary
+# ============================================
 
-# Print configuration
 message(STATUS "")
 message(STATUS "═══════════════════════════════════════════════════════")
-message(STATUS "  squeeze2diretta wrapper configuration")
+message(STATUS "  Build Configuration Summary")
 message(STATUS "═══════════════════════════════════════════════════════")
 message(STATUS "")
-message(STATUS "Build type:        ${CMAKE_BUILD_TYPE}")
-message(STATUS "Diretta SDK:       FOUND")
+message(STATUS "System:")
+message(STATUS "  uname -m:       ${UNAME_M}")
+message(STATUS "  Base Arch:      ${BASE_ARCH}")
+message(STATUS "")
+message(STATUS "Selected:")
+message(STATUS "  Variant:        ${FULL_VARIANT}")
+message(STATUS "  Library:        ${DIRETTA_LIB_NAME}")
+message(STATUS "")
+message(STATUS "SDK:")
+message(STATUS "  Path:           ${SDK_PATH}")
+message(STATUS "  Diretta Lib:    ${SDK_LIB_DIRETTA}")
+message(STATUS "  ACQUA Lib:      ${SDK_LIB_ACQUA}")
+message(STATUS "")
+message(STATUS "Build:")
+message(STATUS "  Compiler:       ${CMAKE_CXX_COMPILER}")
+message(STATUS "  Target:         squeeze2diretta")
 message(STATUS "")
 message(STATUS "NOTE: This wrapper requires 'squeezelite' to be installed")
-message(STATUS "      Install squeezelite from your package manager:")
 message(STATUS "")
 message(STATUS "      Ubuntu/Debian:")
 message(STATUS "        sudo apt-get install squeezelite")
 message(STATUS "")
-message(STATUS "      Or build from source:")
-message(STATUS "        https://github.com/ralph-irving/squeezelite")
+message(STATUS "      Fedora:")
+message(STATUS "        sudo dnf install squeezelite")
+message(STATUS "")
+message(STATUS "      Arch/AudioLinux:")
+message(STATUS "        yay -S squeezelite")
 message(STATUS "")
 message(STATUS "═══════════════════════════════════════════════════════")
 message(STATUS "")

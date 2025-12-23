@@ -91,6 +91,8 @@ sudo apt-get install libavformat-dev libavcodec-dev  # Ubuntu/Debian
 sudo dnf install ffmpeg-devel                        # Fedora
 ```
 
+
+
 ## Installation
 
 ### 1. Clone Repository
@@ -109,6 +111,20 @@ Download from https://www.diretta.link/hostsdk.html and extract:
 tar -xzf DirettaHostSDK_vX.X.X_Linux_x64.tar.gz
 mv DirettaHostSDK diretta-sdk
 ```
+
+## Quick Check
+
+Before building, run the SDK checker to verify your setup:
+```bash
+./check-sdk.sh
+```
+
+This will:
+- ✓ Find your Diretta SDK
+- ✓ Detect your system architecture
+- ✓ Recommend the best library variant
+- ✓ Check if squeezelite is installed
+- ✓ Give you the exact build commands
 
 ### 3. Build
 
