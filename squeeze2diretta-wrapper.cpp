@@ -160,21 +160,16 @@ std::vector<std::string> build_squeezelite_args(const Config& config) {
 
     args.push_back(config.squeezelite_path);
 
-    // Output to STDOUT - always outputs S32_LE format
+    // Output to STDOUT - squeezelite always outputs S32_LE format for STDOUT
     args.push_back("-o");
     args.push_back("-");
 
-    // Force 32-bit output format for consistent STDOUT data
-    args.push_back("-a");
-    args.push_back("32");
-
-    // Restrict to single sample rate if specified, otherwise force 44100 for testing
-    args.push_back("-r");
+    // Sample rates (only if user specified via -r option)
     if (!config.rates.empty()) {
+        args.push_back("-r");
         args.push_back(config.rates);
-    } else {
-        args.push_back("44100");  // Default: force 44.1kHz for consistent output
     }
+    // Note: Without -r, squeezelite uses native sample rate from LMS (no resampling)
 
     // Player name
     args.push_back("-n");
@@ -278,6 +273,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Build and display squeezelite command
+    std::vector<std::string> squeezelite_args = build_squeezelite_args(config);
+    if (g_verbose) {
+        std::cout << "Squeezelite command: ";
+        for (const auto& arg : squeezelite_args) {
+            std::cout << arg << " ";
+        }
+        std::cout << std::endl;
+    }
+
     // Fork and exec squeezelite
     squeezelite_pid = fork();
 
@@ -296,10 +301,9 @@ int main(int argc, char* argv[]) {
         dup2(pipefd[1], STDOUT_FILENO);
         close(pipefd[1]);
 
-        // Build arguments
-        std::vector<std::string> args = build_squeezelite_args(config);
+        // Convert args to C-style array
         std::vector<char*> c_args;
-        for (auto& arg : args) {
+        for (auto& arg : squeezelite_args) {
             c_args.push_back(const_cast<char*>(arg.c_str()));
         }
         c_args.push_back(nullptr);
