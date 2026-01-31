@@ -45,6 +45,7 @@ static pid_t squeezelite_pid = 0;
 static bool running = true;
 static std::unique_ptr<DirettaSync> g_diretta;  // For signal handler access
 static std::atomic<unsigned int> g_current_sample_rate{44100};  // Current detected sample rate
+static std::atomic<bool> g_is_dsd{false};  // Current format is DSD (DoP or native)
 static std::atomic<bool> g_need_reopen{false};  // Flag when Diretta needs to be reopened
 
 // Signal handler for clean shutdown
@@ -67,6 +68,7 @@ struct Config {
     std::string codecs = "";             // -c
     std::string rates = "";              // -r
     int sample_format = 24;              // -a (16, 24, or 32)
+    std::string dsd_format = "";         // -D [format]: empty for DoP, ":u32be" or ":u32le" for native DSD
 
     // Diretta options
     int diretta_target = 0;              // 0-based index (-1 = auto first)
@@ -95,6 +97,10 @@ void print_usage(const char* prog) {
     std::cout << "  -c <codec1>,<codec2>  Restrict codecs (flac,pcm,mp3,ogg,aac,dsd...)" << std::endl;
     std::cout << "  -r <rates>            Supported sample rates" << std::endl;
     std::cout << "  -a <format>           Sample format: 16, 24 (default), or 32" << std::endl;
+    std::cout << "  -D [:format]          Enable DSD output:" << std::endl;
+    std::cout << "                          -D           = DoP (DSD over PCM)" << std::endl;
+    std::cout << "                          -D :u32be    = Native DSD Big Endian (MSB)" << std::endl;
+    std::cout << "                          -D :u32le    = Native DSD Little Endian (LSB)" << std::endl;
     std::cout << std::endl;
     std::cout << "Diretta Options:" << std::endl;
     std::cout << "  -t <number>           Diretta target number (default: 1 = first)" << std::endl;
@@ -130,6 +136,14 @@ Config parse_args(int argc, char* argv[]) {
         }
         else if (arg == "-v") {
             config.verbose = true;
+        }
+        else if (arg == "-D") {
+            // Check if next arg is a DSD format specifier (starts with :)
+            if (i + 1 < argc && argv[i + 1][0] == ':') {
+                config.dsd_format = argv[++i];  // e.g., ":u32be" or ":u32le"
+            } else {
+                config.dsd_format = "dop";  // Default to DoP if no format specified
+            }
         }
         else if ((arg == "-s" || arg == "-n" || arg == "-m" || arg == "-M" ||
                   arg == "-c" || arg == "-r" || arg == "-a" || arg == "-t") && i + 1 < argc) {
@@ -204,6 +218,16 @@ std::vector<std::string> build_squeezelite_args(const Config& config, const std:
         args.push_back(config.codecs);
     }
 
+    // Enable DSD output (DoP or native)
+    if (!config.dsd_format.empty()) {
+        args.push_back("-D");
+        if (config.dsd_format != "dop") {
+            // Native DSD format (e.g., ":u32be" or ":u32le")
+            args.push_back(config.dsd_format);
+        }
+        // If "dop", -D alone enables DoP
+    }
+
     // Debug logging (if verbose)
     if (config.verbose) {
         args.push_back("-d");
@@ -220,8 +244,10 @@ void monitor_squeezelite_stderr(int stderr_fd) {
     char buffer[4096];
     std::string line_buffer;
 
-    // Regex to match: "track start sample rate: XXXXX"
+    // Regex patterns
     std::regex sample_rate_regex(R"(track start sample rate:\s*(\d+))");
+    std::regex dsd_format_regex(R"(format:\s*(DOP|DSD_U32_BE|DSD_U32_LE))");  // Match any DSD format
+    std::regex pcm_codec_regex(R"(codec open: '[fpom]')");  // PCM codecs
 
     while (running) {
         ssize_t bytes_read = read(stderr_fd, buffer, sizeof(buffer) - 1);
@@ -240,6 +266,30 @@ void monitor_squeezelite_stderr(int stderr_fd) {
             line_buffer.erase(0, pos + 1);
 
             std::smatch match;
+
+            // Check for DSD format (DoP or native)
+            if (std::regex_search(line, match, dsd_format_regex)) {
+                std::string format = match[1].str();
+                bool was_dsd = g_is_dsd.load();
+                if (!was_dsd) {
+                    if (g_verbose) {
+                        std::cout << "\n[Format Detected] " << format << std::endl;
+                    }
+                    g_is_dsd.store(true);
+                    g_need_reopen.store(true);
+                }
+            }
+            // Check for PCM codec (switch back from DSD to PCM)
+            else if (std::regex_search(line, match, pcm_codec_regex)) {
+                bool was_dsd = g_is_dsd.load();
+                if (was_dsd) {
+                    if (g_verbose) {
+                        std::cout << "\n[Format Change] DSD -> PCM" << std::endl;
+                    }
+                    g_is_dsd.store(false);
+                    // Sample rate will trigger reopen
+                }
+            }
 
             // Check for sample rate changes
             if (std::regex_search(line, match, sample_rate_regex)) {
@@ -460,31 +510,44 @@ int main(int argc, char* argv[]) {
     uint64_t frames_sent = 0;
 
     while (running) {
-        // Check if Diretta needs to be reopened (sample rate change)
+        // Check if Diretta needs to be reopened (sample rate or format change)
         if (g_need_reopen.load()) {
             unsigned int new_rate = g_current_sample_rate.load();
+            bool is_dsd = g_is_dsd.load();
             g_need_reopen.store(false);
 
-            std::cout << "\n[Reopening Diretta] PCM at " << new_rate << "Hz" << std::endl;
+            std::cout << "\n[Reopening Diretta] " << (is_dsd ? "DSD" : "PCM")
+                      << " at " << new_rate << "Hz" << std::endl;
 
             // Close current Diretta connection
             g_diretta->close();
 
-            // Update format - always PCM (squeezelite converts DSD to PCM for stdout)
-            format.isDSD = false;
-            format.sampleRate = new_rate;
-            format.isCompressed = false;
-            format.bitDepth = 32;  // S32_LE
+            // Update format
+            if (is_dsd) {
+                // DSD format (DoP or native DSD_U32_BE/LE)
+                // Squeezelite outputs S32_LE/BE with DSD data
+                format.isDSD = true;
+                format.sampleRate = new_rate;  // Frame rate (e.g., 176400 for DSD128 native, 352800 for DoP)
+                format.isCompressed = false;
+                format.bitDepth = 32;  // S32_LE/BE container format
+            } else {
+                // Regular PCM
+                format.isDSD = false;
+                format.sampleRate = new_rate;
+                format.isCompressed = false;
+                format.bitDepth = 32;  // S32_LE for PCM
+            }
 
-            // Reopen Diretta with new sample rate
+            // Reopen Diretta with new format
             if (!g_diretta->open(format)) {
-                std::cerr << "Failed to reopen Diretta with new sample rate" << std::endl;
+                std::cerr << "Failed to reopen Diretta with new format" << std::endl;
                 running = false;
                 break;
             }
 
-            // Recalculate bytes per frame (always PCM: 4 bytes/sample * 2 channels = 8 bytes/frame)
-            bytes_per_frame = (format.bitDepth / 8) * format.channels;
+            // Recalculate bytes per frame
+            // DSD (DoP/native) and PCM both use S32_LE/BE format from squeezelite
+            bytes_per_frame = (format.bitDepth / 8) * format.channels;  // 4 bytes/sample * 2 ch = 8
             buffer_size = CHUNK_SIZE * bytes_per_frame;
             buffer.resize(buffer_size);
 
@@ -492,7 +555,8 @@ int main(int argc, char* argv[]) {
             start_time = std::chrono::steady_clock::now();
             frames_sent = 0;
 
-            std::cout << "[Diretta Reopened] Ready for PCM at " << new_rate << "Hz" << std::endl;
+            std::cout << "[Diretta Reopened] Ready for " << (is_dsd ? "DSD" : "PCM")
+                      << " at " << new_rate << "Hz" << std::endl;
         }
 
         ssize_t bytes_read = read(fifo_fd, buffer.data(), buffer_size);
