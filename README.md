@@ -112,9 +112,28 @@ tar -xzf DirettaHostSDK_vX.X.X_Linux_x64.tar.gz
 mv DirettaHostSDK diretta-sdk
 ```
 
+### 3. Setup Squeezelite (Automated)
+
+**For first-time users**, we provide an automated setup script that handles everything:
+
+```bash
+./setup-squeezelite.sh
+```
+
+This script will:
+- ✓ Install all required dependencies
+- ✓ Clone and patch squeezelite with stdout flush fix
+- ✓ Compile squeezelite with optimal settings
+- ✓ Optionally install squeezelite system-wide
+- ✓ Build squeeze2diretta wrapper
+
+**Manual setup**: See [SQUEEZELITE.md](SQUEEZELITE.md) for detailed instructions.
+
+> **Note**: The patched squeezelite includes a critical fix for stdout buffering when piping audio data. Without this patch, squeeze2diretta will receive silence.
+
 ## Quick Check
 
-Before building, run the SDK checker to verify your setup:
+Before building manually, run the SDK checker to verify your setup:
 ```bash
 ./check-sdk.sh
 ```
@@ -126,7 +145,7 @@ This will:
 - ✓ Check if squeezelite is installed
 - ✓ Give you the exact build commands
 
-### 3. Build
+### 4. Build (Manual)
 
 ```bash
 mkdir build && cd build
@@ -134,7 +153,7 @@ cmake ..
 make -j$(nproc)
 ```
 
-### 4. Install (optional)
+### 5. Install (optional)
 
 ```bash
 sudo make install
