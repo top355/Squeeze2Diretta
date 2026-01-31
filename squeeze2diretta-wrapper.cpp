@@ -372,6 +372,10 @@ int main(int argc, char* argv[]) {
     uint64_t total_bytes = 0;
     uint64_t total_frames = 0;
 
+    // For rate limiting - track timing to send at correct sample rate
+    auto start_time = std::chrono::steady_clock::now();
+    uint64_t frames_sent = 0;
+
     while (running) {
         ssize_t bytes_read = read(fifo_fd, buffer.data(), buffer_size);
 
@@ -432,6 +436,18 @@ int main(int argc, char* argv[]) {
 
         total_bytes += static_cast<uint64_t>(bytes_read);
         total_frames += num_frames;
+        frames_sent += num_frames;
+
+        // Rate limiting: Sleep to maintain correct playback speed
+        // Calculate expected time for frames sent so far
+        auto expected_time = start_time + std::chrono::microseconds(
+            (frames_sent * 1000000ULL) / format.sampleRate);
+        auto now = std::chrono::steady_clock::now();
+
+        // If we're ahead of schedule, sleep
+        if (now < expected_time) {
+            std::this_thread::sleep_until(expected_time);
+        }
 
         // Print progress every ~10 seconds at 44.1kHz
         if (g_verbose && total_frames % (44100 * 10) < CHUNK_SIZE) {
