@@ -1,429 +1,353 @@
-# squeeze2diretta
+# squeeze2diretta v2.0.0
 
-A lightweight Squeezebox client that streams directly to Diretta protocol DACs, bypassing traditional audio outputs.
+**Squeezelite to Diretta Bridge - Native DSD & Hi-Res PCM Streaming**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/Platform-Linux-blue.svg)](https://www.linux.org/)
+[![C++17](https://img.shields.io/badge/C++-17-00599C.svg)](https://isocpp.org/)
+
+---
+
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![DSD](https://img.shields.io/badge/DSD-Native-green.svg)
+![SDK](https://img.shields.io/badge/SDK-DIRETTA::Sync-orange.svg)
+
+---
 
 ## Overview
 
-**squeeze2diretta** is a fork of [squeezelite](https://github.com/ralph-irving/squeezelite) with a native Diretta output backend. It connects to Lyrion Music Server (formerly Logitech Media Server) and streams audio directly to Diretta-compatible DACs over the network.
+**squeeze2diretta** bridges Logitech Media Server (LMS) and Squeezelite to Diretta protocol endpoints, enabling bit-perfect playback of high-resolution PCM and native DSD through Diretta Targets. It uses the advanced DirettaSync implementation from DirettaRendererUPnP v2.0 for low-latency, high-quality audio streaming.
 
-### Why squeeze2diretta?
+### What is This?
 
-- **Direct streaming**: LMS → squeeze2diretta → Diretta DAC (no UPnP layer)
-- **Bit-perfect playback**: Raw PCM/DSD data sent directly to DAC
-- **Native gapless**: Full support for gapless playback
-- **All formats supported**: FLAC, MP3, OGG, AAC, ALAC, WMA, DSD
-- **Low latency**: Minimal processing overhead
-- **Better than squeeze2upnp**: No double conversion (Squeezebox→UPnP→Diretta)
+This tool acts as a **wrapper** that:
+1. Launches **Squeezelite** with stdout output
+2. Reads PCM/DSD audio data from Squeezelite
+3. Streams it to a **Diretta Target** using the Diretta protocol
+4. Handles format changes dynamically (PCM ↔ DSD, different sample rates)
+
+### Why Use This?
+
+- **Native DSD playback** from your LMS library (DSF/DFF files)
+- **Bit-perfect streaming** - bypasses OS audio stack
+- **High-resolution PCM** up to 768kHz (limited by Squeezelite)
+- **Seamless integration** with existing LMS/Squeezelite setup
+- **Low latency** using DirettaSync v2.0 architecture
+
+---
+
+## Architecture
+
+\`\`\`
+┌─────────────────────────────┐
+│  Logitech Media Server      │  (LMS on any network device)
+└─────────────┬───────────────┘
+              │ HTTP Streaming
+              ▼
+┌───────────────────────────────────────────────────────────────┐
+│  squeeze2diretta                                              │
+│  ┌─────────────────┐         ┌─────────────────────────────┐  │
+│  │  Squeezelite    │────────▶│      DirettaSync            │  │
+│  │  (decoder)      │ stdout  │  (from DirettaRendererUPnP) │  │
+│  │                 │  pipe   │                             │  │
+│  │  - DSF/DFF→DSD  │         │  - Format conversion        │  │
+│  │  - FLAC→PCM     │         │  - SIMD optimizations       │  │
+│  │  - Rate change  │         │  - Low-latency buffers      │  │
+│  └─────────────────┘         └──────────────┬──────────────┘  │
+└───────────────────────────────────────────────┼────────────────┘
+              │ Diretta Protocol (UDP/Ethernet)
+              ▼
+┌─────────────────────────────┐
+│      Diretta TARGET         │  (Memory Play, GentooPlayer, DDC-0, etc.)
+└─────────────┬───────────────┘
+              ▼
+┌─────────────────────────────┐
+│            DAC              │
+└─────────────────────────────┘
+\`\`\`
+
+---
 
 ## Features
 
-- ✅ Native Diretta protocol output
-- ✅ Support for PCM up to 768kHz/32-bit
-- ✅ Native DSD support (DSD64/128/256/512/1024)
-- ✅ Gapless playback
-- ✅ Buffer size configuration
-- ✅ Jumbo frames support (MTU up to 16128)
-- ✅ Advanced Diretta SDK tuning (thread mode, cycle time, etc.)
-- ✅ Automatic Diretta target discovery
-- ✅ Volume control (software)
-- ✅ Resampling support (via SoX)
+### Audio Quality
+- **Native DSD support**: DSD64, DSD128, DSD256 (DSF and DFF files)
+- **High-resolution PCM**: Up to 768kHz (Squeezelite limitation)
+- **Bit-perfect streaming**: No resampling when formats match
+- **Format support**: All formats supported by Squeezelite (FLAC, ALAC, WAV, AIFF, DSF, DFF, MP3, AAC, OGG)
+- **Gapless playback**: Seamless album listening
+
+### DSD Handling
+- **Native DSD streaming**: Direct DSD bitstream (not DoP)
+- **Automatic format detection**: DSD_U32_BE, DSD_U32_LE from Squeezelite
+- **Dynamic conversion**:
+  - Interleaved → Planar conversion
+  - Big Endian → Little Endian byte swap
+  - LSB/MSB bit order handling (automatic via DirettaSync)
+- **Optimized for DSF files**: Common audiophile format
+
+### Low-Latency Architecture
+- **DirettaSync v2.0**: Lock-free ring buffers, SIMD optimizations
+- **Direct pipe**: Squeezelite stdout → squeeze2diretta (minimal overhead)
+- **Dynamic rate limiting**: Precise timing for smooth playback
+
+### Network Optimization
+- **Adaptive packet sizing**: Synchronized with Diretta SDK
+- **Jumbo frame support**: Up to 16KB MTU
+- **Automatic MTU detection**: Optimal performance configuration
+
+---
 
 ## Requirements
 
-### System Requirements
+### Supported Architectures
 
-- **Linux** (tested on Ubuntu 22.04/24.04, Fedora 40, AudioLinux)
-- **Lyrion Music Server** (LMS) running on your network
-- **Diretta-compatible DAC** (e.g., Holo Audio Spring, May, etc.)
+Same as DirettaRendererUPnP - the build system automatically detects your CPU:
 
-### Diretta Host SDK
+| Architecture | Variants | Notes |
+|--------------|----------|-------|
+| **x64 (Intel/AMD)** | v2 (baseline), v3 (AVX2), v4 (AVX-512), zen4 | AVX2 recommended |
+| **ARM64** | Standard (4KB pages), k16 (16KB pages) | Raspberry Pi 4/5 supported |
+| **RISC-V** | Experimental | riscv64 |
 
-⚠️ **IMPORTANT**: The Diretta Host SDK is **proprietary software** by Yu Harada and is **NOT included** in this repository.
+### Platform Support
 
-**To obtain the SDK:**
+| Platform | Status |
+|----------|--------|
+| **Linux x64** | Fully supported (Fedora, Ubuntu, Arch, AudioLinux) |
+| **Linux ARM64** | Fully supported (Raspberry Pi 4/5) |
+| **Windows** | Not supported |
+| **macOS** | Not supported |
 
-1. Visit the official Diretta SDK page: **https://www.diretta.link/hostsdk.html**
-2. Download the appropriate version for your platform (Linux x64/ARM)
-3. Extract the SDK to `squeeze2diretta/diretta-sdk/`
+### Hardware
+- **Minimum**: Dual-core CPU, 1GB RAM, Gigabit Ethernet
+- **Recommended**: Quad-core CPU, 2GB RAM, 2.5/10G Ethernet with jumbo frames
+- **Network**: Gigabit Ethernet minimum (10G recommended for DSD256+)
+- **MTU**: 1500 bytes minimum, 9000+ recommended for DSD
 
-**Expected directory structure after SDK installation:**
+### Software Requirements
+- **OS**: Linux with kernel 4.x+ (RT kernel recommended)
+- **Diretta Host SDK**: Version 148 or 147 ([download here](https://www.diretta.link/hostsdk.html))
+- **Squeezelite**: Compiled with native DSD support (included setup script)
+- **LMS**: Logitech Media Server running on your network
+- **Build tools**: gcc/g++ 7.0+, make, CMake 3.10+
 
-```
-squeeze2diretta/
-├── diretta-sdk/
-│   ├── include/
-│   │   ├── DIRETTA/
-│   │   │   ├── Sync.h
-│   │   │   └── ...
-│   │   └── ACQUA/
-│   │       ├── Clock.h
-│   │       └── ...
-│   └── lib/
-│       ├── libDIRETTA.so
-│       └── libACQUA.so
-├── diretta/
-│   ├── DirettaOutputSimple.h
-│   └── DirettaOutputSimple.cpp
-└── ...
-```
-
-**Without the SDK, compilation will fail.** Please ensure you have obtained and installed the SDK before attempting to build.
-
-### Build Dependencies
-
-```bash
-# Ubuntu/Debian
-sudo apt-get install build-essential cmake git \
-                     libflac-dev libmad0-dev libvorbis-dev \
-                     libfaad-dev libmpg123-dev libasound2-dev
-
-# Fedora
-sudo dnf install gcc-c++ cmake git \
-                 flac-devel libmad-devel libvorbis-devel \
-                 faad2-devel mpg123-devel alsa-lib-devel
-
-# Optional: For resampling support
-sudo apt-get install libsoxr-dev  # Ubuntu/Debian
-sudo dnf install soxr-devel       # Fedora
-
-# Optional: For ALAC/WMA support
-sudo apt-get install libavformat-dev libavcodec-dev  # Ubuntu/Debian
-sudo dnf install ffmpeg-devel                        # Fedora
-```
-
-
-
-## Installation
-
-### 1. Clone Repository
-
-```bash
-git clone --recursive https://github.com/cometdom/squeeze2diretta.git
-cd squeeze2diretta
-```
-
-### 2. Install Diretta SDK
-
-Download from https://www.diretta.link/hostsdk.html and extract:
-
-```bash
-# Example for Linux x64
-tar -xzf DirettaHostSDK_vX.X.X_Linux_x64.tar.gz
-mv DirettaHostSDK diretta-sdk
-```
-
-### 3. Setup Squeezelite (Automated)
-
-**For first-time users**, we provide an automated setup script that handles everything:
-
-```bash
-./setup-squeezelite.sh
-```
-
-This script will:
-- ✓ Install all required dependencies
-- ✓ Clone and patch squeezelite with stdout flush fix
-- ✓ Compile squeezelite with optimal settings
-- ✓ Optionally install squeezelite system-wide
-- ✓ Build squeeze2diretta wrapper
-
-**Manual setup**: See [SQUEEZELITE.md](SQUEEZELITE.md) for detailed instructions.
-
-> **Note**: The patched squeezelite includes a critical fix for stdout buffering when piping audio data. Without this patch, squeeze2diretta will receive silence.
-
-## Quick Check
-
-Before building manually, run the SDK checker to verify your setup:
-```bash
-./check-sdk.sh
-```
-
-This will:
-- ✓ Find your Diretta SDK
-- ✓ Detect your system architecture
-- ✓ Recommend the best library variant
-- ✓ Check if squeezelite is installed
-- ✓ Give you the exact build commands
-
-### 4. Build (Manual)
-
-```bash
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-```
-
-### 5. Install (optional)
-
-```bash
-sudo make install
-```
-
-Or run directly from build directory:
-```bash
-./squeeze2diretta -l  # List Diretta targets
-```
+---
 
 ## Quick Start
 
-```bash
-# List available Diretta targets
-squeeze2diretta -l
+### 1. Install System Dependencies
 
-# Connect to LMS with first Diretta target
-squeeze2diretta -s <lms-ip> -n "Living Room" -t 1
+**Fedora:**
+\`\`\`bash
+sudo dnf install -y gcc-c++ make cmake git patch \\
+    alsa-lib-devel flac-devel libvorbis-devel \\
+    libmad-devel mpg123-devel opus-devel soxr-devel openssl-devel
+\`\`\`
 
-# With custom buffer (recommended for hi-res)
-squeeze2diretta -s <lms-ip> -n "Living Room" -t 1 -b 3.0
-```
+**Ubuntu/Debian:**
+\`\`\`bash
+sudo apt install -y build-essential cmake git patch \\
+    libasound2-dev libflac-dev libvorbis-dev \\
+    libmad0-dev libmpg123-dev libopus-dev libsoxr-dev libssl-dev
+\`\`\`
 
-## Usage
+**Arch/AudioLinux:**
+\`\`\`bash
+sudo pacman -S base-devel cmake git patch \\
+    alsa-lib flac libvorbis libmad mpg123 opus soxr openssl
+\`\`\`
 
-```
-squeeze2diretta [options]
+### 2. Download Diretta Host SDK
 
-Diretta Options:
-  -t <number>           Diretta target number (use -l to list)
-  -l                    List available Diretta targets and exit
-  -b <seconds>          Buffer size in seconds (default: 2.0)
-  --thread-mode <n>     THRED_MODE bitmask (default: 1)
-  --cycle-time <µs>     Transfer cycle max time (default: 10000)
-  --cycle-min-time <µs> Transfer cycle min time (default: 333)
-  --info-cycle <µs>     Info packet cycle time (default: 5000)
-  --mtu <bytes>         Override MTU (default: auto-detect)
+1. Visit [diretta.link](https://www.diretta.link/hostsdk.html)
+2. Download **DirettaHostSDK_148** (or latest version)
+3. Extract to one of these locations:
+   - \`~/DirettaHostSDK_148\`
+   - \`/opt/DirettaHostSDK_148\`
+   - Or set \`DIRETTA_SDK_PATH\` environment variable
 
-Squeezebox Options:
-  -s <server>[:<port>]  Connect to LMS server (default: autodiscovery)
-  -n <name>             Set player name
-  -m <mac>              Set MAC address (format: ab:cd:ef:12:34:56)
-  -M <modelname>        Set model name (default: SqueezeLite)
+### 3. Clone Repository
 
-Audio Options:
-  -c <codec1>,<codec2>  Restrict codecs (flac,pcm,mp3,ogg,aac,dsd...)
-  -e <codec1>,<codec2>  Exclude codecs
-  -r <rates>            Supported sample rates
-  -u [params]           Enable upsampling (SoX resampler)
-  -D [delay][:format]   DSD output mode
+\`\`\`bash
+git clone https://github.com/yourusername/squeeze2diretta.git
+cd squeeze2diretta
+\`\`\`
 
-Logging:
-  -d <log>=<level>      Set logging level
-                        logs: all|slimproto|stream|decode|output
-                        level: info|debug|sdebug
-  -f <logfile>          Write logs to file
+### 4. Setup Squeezelite (Automated)
 
-Other:
-  -z                    Run as daemon
-  -P <pidfile>          Write PID to file
-  -?                    Show help
-```
+The included script compiles Squeezelite with the required patch for native DSD support:
 
-## Configuration Examples
+\`\`\`bash
+# Make script executable
+chmod +x setup-squeezelite.sh
 
-### Basic Setup (Auto-discovery)
-```bash
-squeeze2diretta -n "Diretta Player" -t 1
-```
+# Run automated setup (downloads, patches, compiles)
+./setup-squeezelite.sh
+\`\`\`
 
-### Connect to Specific LMS Server
-```bash
-squeeze2diretta -s 192.168.1.100 -n "Living Room" -t 1
-```
+**What the script does:**
+1. Clones Squeezelite from official repository
+2. Applies stdout flush patch (required for pipe mode)
+3. Compiles with native DSD support enabled
+4. Creates \`squeezelite/squeezelite\` binary ready to use
 
-### High-Resolution Audio (DSD512, PCM768)
-```bash
-squeeze2diretta -s 192.168.1.100 -n "HiFi Room" -t 1 \
-                -b 3.0 --thread-mode 17 --cycle-time 8000
-```
+**Manual alternative:** See [SQUEEZELITE.md](SQUEEZELITE.md) for manual compilation steps.
 
-### With Upsampling to 192kHz
-```bash
-squeeze2diretta -s 192.168.1.100 -n "Living Room" -t 1 \
-                -u vLIX::28:95:100:50 -Z 192000
-```
+### 5. Build squeeze2diretta
 
-### DSD Native Output
-```bash
-squeeze2diretta -s 192.168.1.100 -n "DSD Player" -t 1 \
-                -D 0:dsd -b 3.0
-```
+\`\`\`bash
+# Create build directory
+mkdir build
+cd build
 
-### Run as Daemon with Logging
-```bash
-squeeze2diretta -s 192.168.1.100 -n "Diretta Player" -t 1 \
-                -z -f /var/log/squeeze2diretta.log
-```
+# Configure and build (auto-detects SDK and architecture)
+cmake ..
+make
 
-## Systemd Service
+# Binary created at: build/squeeze2diretta
+\`\`\`
 
-Create `/etc/systemd/system/squeeze2diretta.service`:
+**Architecture override** (if auto-detection fails):
+\`\`\`bash
+cmake -DARCH_NAME=x64-linux-15v3 ..      # For x64 with AVX2
+cmake -DARCH_NAME=aarch64-linux-15k16 .. # For Raspberry Pi
+\`\`\`
 
-```ini
-[Unit]
-Description=squeeze2diretta Squeezebox Player
-After=network-online.target
-Wants=network-online.target
+### 6. Find Your Diretta Target
 
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/squeeze2diretta -s 192.168.1.100 -n "Diretta Player" -t 1 -z
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
+\`\`\`bash
+# List available Diretta targets on network
+./build/squeeze2diretta --list-targets
+\`\`\`
 
-[Install]
-WantedBy=multi-user.target
-```
+Output example:
+\`\`\`
+Found 2 Diretta target(s):
+  [1] DDC-0_8A60 (192.168.1.50)
+  [2] GentooPlayer_AB12 (192.168.1.51)
+\`\`\`
 
-Enable and start:
-```bash
-sudo systemctl enable squeeze2diretta
-sudo systemctl start squeeze2diretta
+### 7. Run squeeze2diretta
+
+\`\`\`bash
+# Basic usage (replace with your LMS server IP and target number)
+./build/squeeze2diretta \\
+    --squeezelite ./squeezelite/squeezelite \\
+    -s 192.168.1.100 \\
+    --target 1
+
+# With verbose output (for troubleshooting)
+./build/squeeze2diretta \\
+    --squeezelite ./squeezelite/squeezelite \\
+    -s 192.168.1.100 \\
+    --target 1 \\
+    -v
+
+# Specify sample rate restrictions (e.g., 44.1kHz family only)
+./build/squeeze2diretta \\
+    --squeezelite ./squeezelite/squeezelite \\
+    -r 768000 \\
+    -s 192.168.1.100 \\
+    --target 1
+\`\`\`
+
+### 8. Connect from LMS
+
+1. Open LMS web interface (usually http://lms-server:9000)
+2. Go to Settings → Player → Audio
+3. You should see "squeeze2diretta" as a player
+4. Select it and start playing music!
+
+---
+
+## Configuration Options
+
+### squeeze2diretta Options
+
+\`\`\`bash
+--squeezelite <path>    Path to squeezelite binary (required)
+--target, -t <index>    Select Diretta target by index (required)
+--list-targets          List available Diretta targets and exit
+--verbose, -v           Enable verbose debug output
+\`\`\`
+
+### Squeezelite Options (passed through)
+
+Common options that squeeze2diretta passes to Squeezelite:
+
+\`\`\`bash
+-s <server>            LMS server IP address
+-n <name>              Player name (default: squeeze2diretta)
+-M <model>             Model name (default: SqueezeLite)
+-r <rates>             Supported sample rates (e.g., 768000)
+-D :u32be              DSD output format (u32be = Big Endian U32)
+-d <categories>        Debug output (e.g., all=info)
+\`\`\`
+
+---
+
+## Systemd Service (Auto-Start)
+
+See [systemd/README.md](systemd/README.md) for detailed instructions on setting up auto-start with systemd.
+
+**Quick example:**
+
+\`\`\`bash
+# Install service file
+sudo cp systemd/squeeze2diretta.service /etc/systemd/system/
+
+# Edit to match your setup
+sudo nano /etc/systemd/system/squeeze2diretta.service
+
+# Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable --now squeeze2diretta
+
+# Check status
 sudo systemctl status squeeze2diretta
-```
+\`\`\`
 
-View logs:
-```bash
-sudo journalctl -u squeeze2diretta -f
-```
-
-## Advanced Diretta Configuration
-
-### Thread Mode (--thread-mode)
-
-Bitmask for real-time thread behavior:
-
-| Value | Flag | Description |
-|-------|------|-------------|
-| 1 | Critical | REALTIME priority (default) |
-| 2 | NoShortSleep | Disable short sleep intervals |
-| 4 | NoSleep4Core | Disable sleep for 4-core systems |
-| 8 | SocketNoBlock | Non-blocking socket operations |
-| 16 | OccupiedCPU | Maximize CPU utilization |
-| 32/64/128 | FEEDBACK | Moving average feedback control |
-
-**Examples:**
-- `--thread-mode 1` - Default (Critical only)
-- `--thread-mode 17` - Critical + OccupiedCPU (high performance)
-- `--thread-mode 33` - Critical + FEEDBACK32
-
-## Comparison with Alternatives
-
-| Feature | squeeze2diretta | squeeze2upnp | DirettaRendererUPnP |
-|---------|----------------|--------------|---------------------|
-| Protocol | Squeezebox → Diretta | Squeezebox → UPnP → Diretta | UPnP → Diretta |
-| Layers | 2 | 3 | 2 |
-| Gapless | Native | Depends | Yes |
-| Latency | Lowest | Medium | Low |
-| LMS Integration | Perfect | Perfect | Via UPnP |
-| Setup | Simple | Medium | Medium |
-| DSD Support | Native | Native | Native |
-
-## Troubleshooting
-
-### Player not appearing in LMS
-
-1. Check squeeze2diretta is running:
-```bash
-ps aux | grep squeeze2diretta
-```
-
-2. Check network connectivity:
-```bash
-ping <lms-ip>
-```
-
-3. Try specifying LMS server explicitly:
-```bash
-squeeze2diretta -s <lms-ip> -n "Test Player" -t 1 -d all=info
-```
-
-### No Diretta targets found
-
-1. Ensure DAC is powered on and connected to network
-2. Check firewall settings (UDP broadcast must be allowed)
-3. Verify network connectivity:
-```bash
-squeeze2diretta -l
-```
-
-### Audio dropouts or stuttering
-
-1. Increase buffer size:
-```bash
-squeeze2diretta -b 3.0
-```
-
-2. Adjust thread mode:
-```bash
-squeeze2diretta --thread-mode 17
-```
-
-3. Enable jumbo frames if supported:
-```bash
-squeeze2diretta --mtu 9000
-```
-
-### Build fails with "DIRETTA not found"
-
-Ensure Diretta SDK is properly installed:
-```bash
-ls -la diretta-sdk/lib/
-# Should show: libDIRETTA.so, libACQUA.so
-```
-
-## Known Limitations
-
-- **Audirvana compatibility**: Not applicable (LMS only)
-- **Multi-room sync**: Not yet implemented
-- **Hardware volume control**: Not supported (use LMS volume)
-
-## Development
-
-### Project Structure
-
-```
-squeeze2diretta/
-├── diretta/
-│   ├── DirettaOutputSimple.h    # Simplified Diretta output
-│   └── DirettaOutputSimple.cpp
-├── output_diretta.c              # Squeezelite output backend
-├── squeezelite/                  # Submodule
-└── diretta-sdk/                  # Downloaded separately
-```
-
-### Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
+---
 
 ## Credits
 
-- **Squeezelite**: Adrian Smith (original), Ralph Irving (maintainer)
-- **Diretta Protocol & SDK**: Yu Harada - https://www.diretta.link/
-- **squeeze2diretta**: Dominique COMET
+### Author
+**Dominique COMET** ([@cometdom](https://github.com/cometdom)) - squeeze2diretta development
+
+### Core Technologies
+
+- **DirettaSync v2.0** - From [DirettaRendererUPnP](https://github.com/cometdom/DirettaRendererUPnP)
+  - Low-latency architecture by Dominique COMET
+  - Core Diretta integration by **SwissMountainsBear** (ported from [MPD Diretta Output Plugin](https://github.com/swissmountainsbear/mpd-diretta-output-plugin))
+  - Performance optimizations by **leeeanh** (lock-free ring buffers, SIMD, cache-line separation)
+
+- **Diretta Protocol & SDK** - **Yu Harada** ([diretta.link](https://www.diretta.link))
+
+- **Squeezelite** - **Ralph Irving** and contributors ([GitHub](https://github.com/ralph-irving/squeezelite))
+
+- **Logitech Media Server** - Open source audio streaming server
+
+### Special Thanks
+
+- **SwissMountainsBear** - For the \`DIRETTA::Sync\` architecture, \`getNewStream()\` callback implementation, and buffer management patterns from his MPD plugin that made DirettaSync possible
+
+- **leeeanh** - For brilliant optimization strategies including lock-free SPSC ring buffers, power-of-2 sizing with bitmask modulo, cache-line separation, and AVX2 SIMD batch conversions
+
+- **Yu Harada** - Creator of Diretta protocol and SDK, guidance on low-level API usage
+
+- **Audiophile community** - Testing and feedback on DSD playback
+
+---
 
 ## License
 
-GPLv3 - See LICENSE file for details
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-**Note:** This project combines:
-- Squeezelite code (GPLv3)
-- Diretta SDK (proprietary - separate download required)
+**IMPORTANT**: The Diretta Host SDK is proprietary software by Yu Harada and is licensed for **personal use only**. Commercial use is prohibited.
 
-The Diretta SDK is proprietary software and must be obtained separately from https://www.diretta.link/hostsdk.html
+---
 
-## Related Projects
+**Enjoy native DSD and hi-res PCM streaming from your LMS library!**
 
-- [DirettaRendererUPnP](https://github.com/cometdom/DirettaRendererUPnP) - UPnP renderer for Diretta
-- [Lyrion Music Server](https://lyrion.org/) - Music server (formerly LMS)
-- [Squeezelite](https://github.com/ralph-irving/squeezelite) - Original player
-
-## Support
-
-- Issues: https://github.com/cometdom/squeeze2diretta/issues
-- Diretta SDK: https://www.diretta.link/hostsdk.html
-- LMS Forums: https://forums.slimdevices.com/
+*Last updated: 2026-02-01*

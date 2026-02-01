@@ -1,0 +1,45 @@
+[Unit]
+Description=squeeze2diretta - Squeezelite to Diretta Bridge
+Documentation=https://github.com/cometdom/squeeze2diretta
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOURUSER
+Group=YOURUSER
+WorkingDirectory=/home/YOURUSER/squeeze2diretta
+
+# Main command - EDIT THESE VALUES:
+# - Replace YOURUSER with your username
+# - Replace LMS_SERVER_IP with your LMS server IP address
+# - Replace TARGET_NUMBER with your Diretta target number (from --list-targets)
+ExecStart=/home/YOURUSER/squeeze2diretta/build/squeeze2diretta \
+    --squeezelite /home/YOURUSER/squeeze2diretta/squeezelite/squeezelite \
+    -r 768000 -D :u32be \
+    -s LMS_SERVER_IP \
+    -n squeeze2diretta \
+    -M SqueezeLite \
+    --target TARGET_NUMBER
+
+# Restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=squeeze2diretta
+
+# Performance settings (optional but recommended)
+Nice=-10
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+
+# Allow real-time scheduling (optional)
+# Uncomment if you want RT priority
+#LimitRTPRIO=95
+#LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
