@@ -331,7 +331,11 @@ build_squeeze2diretta() {
 
     cd "$SCRIPT_DIR"
 
-    # Create build directory
+    # Clean and create build directory (ensure fresh compilation)
+    if [ -d "build" ]; then
+        print_info "Cleaning previous build..."
+        rm -rf build
+    fi
     mkdir -p build
     cd build
 
