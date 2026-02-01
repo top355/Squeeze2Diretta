@@ -616,10 +616,18 @@ int main(int argc, char* argv[]) {
             break;
         }
 
-        // Calculate number of samples (DirettaSync expects samples, not frames)
-        // For PCM: samples = frames (each frame is one sample per channel)
+        // Calculate number of samples for DirettaSync
         size_t num_frames = static_cast<size_t>(bytes_read) / bytes_per_frame;
-        size_t num_samples = num_frames;  // DirettaSync's sendAudio expects frames for PCM
+        size_t num_samples;
+
+        if (format.isDSD) {
+            // For DSD: numSamples = (totalBytes * 8) / channels
+            // This represents the total number of DSD bits divided by channels
+            num_samples = (static_cast<size_t>(bytes_read) * 8) / format.channels;
+        } else {
+            // For PCM: samples = frames (each frame is one sample per channel)
+            num_samples = num_frames;
+        }
 
         // Debug first few reads and periodic sample range checks
         bool show_detail = (total_frames < CHUNK_SIZE * 5);
