@@ -579,11 +579,10 @@ int main(int argc, char* argv[]) {
             format.bitDepth = bit_depth;  // 1 for native DSD, 32 for DoP/PCM
 
             // CRITICAL: Tell DirettaSync the source DSD format
-            // Squeezelite may already convert LSB→MSB when reading DSF files
-            // Try DFF (MSB) to avoid double bit-reversal
+            // Testing: Try DSF (LSB) to see if bit reversal helps
             if (is_dsd && (dsd_format == DSDFormatType::U32_BE || dsd_format == DSDFormatType::U32_LE)) {
-                format.dsdFormat = AudioFormat::DSDFormat::DFF;  // Assume MSB (no bit reversal needed)
-                std::cout << "[DSD Format] Set to DFF (MSB) - testing to avoid double conversion" << std::endl;
+                format.dsdFormat = AudioFormat::DSDFormat::DSF;  // Force LSB (with bit reversal)
+                std::cout << "[DSD Format] Set to DSF (LSB) - testing with bit reversal" << std::endl;
             }
 
             // Set rate for timing calculations
