@@ -600,7 +600,7 @@ int main(int argc, char* argv[]) {
             // Send silence before closing to reduce click/pop during format transition
             // This gives the DAC time to fade out gracefully
             {
-                const size_t SILENCE_FRAMES = 512;  // ~10ms at 48kHz
+                const size_t SILENCE_FRAMES = 1024;  // ~20ms at 48kHz
                 size_t silence_bytes = SILENCE_FRAMES * bytes_per_frame;
                 std::vector<uint8_t> silence_buffer(silence_bytes, 0);
 
@@ -610,18 +610,21 @@ int main(int argc, char* argv[]) {
                 }
 
                 // Send multiple silence buffers for smoother fade-out
-                for (int i = 0; i < 3; i++) {
+                for (int i = 0; i < 5; i++) {
                     size_t silence_samples = format.isDSD ?
                         (silence_bytes * 8) / format.channels : SILENCE_FRAMES;
                     g_diretta->sendAudio(silence_buffer.data(), silence_samples);
                 }
 
-                // Small delay to let silence propagate
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                // Delay to let silence propagate through DAC pipeline
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
 
             // Close current Diretta connection
             g_diretta->close();
+
+            // Additional delay after close for DAC to fully stop
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
             // Update format
             // For DoP: isDSD=false because DirettaSync should treat it as PCM
@@ -669,7 +672,7 @@ int main(int argc, char* argv[]) {
             // Send silence after opening to reduce click/pop when starting new format
             // This gives the DAC time to stabilize before real audio arrives
             {
-                const size_t SILENCE_FRAMES = 512;  // ~10ms at 48kHz
+                const size_t SILENCE_FRAMES = 1024;  // ~20ms at 48kHz
                 size_t silence_bytes = SILENCE_FRAMES * new_bytes_per_frame;
                 std::vector<uint8_t> silence_buffer(silence_bytes, 0);
 
@@ -679,11 +682,16 @@ int main(int argc, char* argv[]) {
                 }
 
                 // Send multiple silence buffers for smoother fade-in
-                for (int i = 0; i < 3; i++) {
+                // More buffers for PCM→DSD transition (DAC needs time to switch modes)
+                int num_buffers = format.isDSD ? 8 : 5;
+                for (int i = 0; i < num_buffers; i++) {
                     size_t silence_samples = format.isDSD ?
                         (silence_bytes * 8) / format.channels : SILENCE_FRAMES;
                     g_diretta->sendAudio(silence_buffer.data(), silence_samples);
                 }
+
+                // Delay to let DAC stabilize in new mode
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
 
             // Use the already calculated bytes per frame for buffer sizing
