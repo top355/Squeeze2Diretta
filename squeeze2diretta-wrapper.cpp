@@ -597,6 +597,29 @@ int main(int argc, char* argv[]) {
             }
             std::cout << std::endl;
 
+            // Send silence before closing to reduce click/pop during format transition
+            // This gives the DAC time to fade out gracefully
+            {
+                const size_t SILENCE_FRAMES = 512;  // ~10ms at 48kHz
+                size_t silence_bytes = SILENCE_FRAMES * bytes_per_frame;
+                std::vector<uint8_t> silence_buffer(silence_bytes, 0);
+
+                if (format.isDSD) {
+                    // For DSD: silence is 0x69 pattern (alternating 1s and 0s)
+                    std::fill(silence_buffer.begin(), silence_buffer.end(), 0x69);
+                }
+
+                // Send multiple silence buffers for smoother fade-out
+                for (int i = 0; i < 3; i++) {
+                    size_t silence_samples = format.isDSD ?
+                        (silence_bytes * 8) / format.channels : SILENCE_FRAMES;
+                    g_diretta->sendAudio(silence_buffer.data(), silence_samples);
+                }
+
+                // Small delay to let silence propagate
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+
             // Close current Diretta connection
             g_diretta->close();
 
@@ -635,16 +658,36 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            // Recalculate bytes per frame for reading from squeezelite
-            // Note: format.bitDepth is for DirettaSync (1 for DSD, 32 for PCM)
-            // But squeezelite always outputs S32_LE/BE (4 bytes per sample) for DSD/DoP
+            // Calculate new bytes per frame first (needed for silence buffer)
+            size_t new_bytes_per_frame;
             if (is_dsd) {
-                // Native DSD or DoP: squeezelite outputs S32 (4 bytes/sample)
-                bytes_per_frame = 4 * format.channels;  // 4 bytes * 2 ch = 8
+                new_bytes_per_frame = 4 * format.channels;  // 4 bytes * 2 ch = 8
             } else {
-                // PCM: use format.bitDepth
-                bytes_per_frame = (format.bitDepth / 8) * format.channels;
+                new_bytes_per_frame = (format.bitDepth / 8) * format.channels;
             }
+
+            // Send silence after opening to reduce click/pop when starting new format
+            // This gives the DAC time to stabilize before real audio arrives
+            {
+                const size_t SILENCE_FRAMES = 512;  // ~10ms at 48kHz
+                size_t silence_bytes = SILENCE_FRAMES * new_bytes_per_frame;
+                std::vector<uint8_t> silence_buffer(silence_bytes, 0);
+
+                if (format.isDSD) {
+                    // For DSD: silence is 0x69 pattern (alternating 1s and 0s)
+                    std::fill(silence_buffer.begin(), silence_buffer.end(), 0x69);
+                }
+
+                // Send multiple silence buffers for smoother fade-in
+                for (int i = 0; i < 3; i++) {
+                    size_t silence_samples = format.isDSD ?
+                        (silence_bytes * 8) / format.channels : SILENCE_FRAMES;
+                    g_diretta->sendAudio(silence_buffer.data(), silence_samples);
+                }
+            }
+
+            // Use the already calculated bytes per frame for buffer sizing
+            bytes_per_frame = new_bytes_per_frame;
             buffer_size = CHUNK_SIZE * bytes_per_frame;
             buffer.resize(buffer_size);
 
