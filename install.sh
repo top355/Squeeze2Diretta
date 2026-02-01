@@ -885,12 +885,18 @@ test_installation() {
         return 1
     fi
 
-    # List Diretta targets
+    # List Diretta targets (with timeout to avoid blocking)
     echo ""
     print_info "Searching for Diretta targets..."
-    "$BINARY" --list-targets 2>&1 || {
-        print_warning "Could not list Diretta targets"
-        print_info "Make sure a Diretta device is connected to your network"
+    print_info "(Press Ctrl+C if it takes too long)"
+    timeout 10 "$BINARY" --list-targets 2>&1 || {
+        local exit_code=$?
+        if [ $exit_code -eq 124 ]; then
+            print_info "Target search timed out (this is normal if no targets found)"
+        else
+            print_warning "Could not list Diretta targets"
+            print_info "Make sure a Diretta device is connected to your network"
+        fi
     }
 
     echo ""

@@ -113,8 +113,8 @@ void print_usage(const char* prog) {
     std::cout << "                          -D :u32le    = Native DSD Little Endian (LSB)" << std::endl;
     std::cout << std::endl;
     std::cout << "Diretta Options:" << std::endl;
-    std::cout << "  -t <number>           Diretta target number (default: 1 = first)" << std::endl;
-    std::cout << "  -l                    List Diretta targets and exit" << std::endl;
+    std::cout << "  -t, --target <number> Diretta target number (default: 1 = first)" << std::endl;
+    std::cout << "  -l, --list-targets    List Diretta targets and exit" << std::endl;
     std::cout << "  --thread-mode <n>     THRED_MODE bitmask (default: 1)" << std::endl;
     std::cout << "  --cycle-time <us>     Transfer cycle time in microseconds (default: auto)" << std::endl;
     std::cout << "  --mtu <bytes>         MTU override (default: auto-detect)" << std::endl;
@@ -141,7 +141,7 @@ Config parse_args(int argc, char* argv[]) {
             print_usage(argv[0]);
             exit(0);
         }
-        else if (arg == "-l") {
+        else if (arg == "-l" || arg == "--list-targets") {
             config.list_targets = true;
         }
         else if (arg == "-v") {
@@ -156,7 +156,7 @@ Config parse_args(int argc, char* argv[]) {
             }
         }
         else if ((arg == "-s" || arg == "-n" || arg == "-m" || arg == "-M" ||
-                  arg == "-c" || arg == "-r" || arg == "-a" || arg == "-t") && i + 1 < argc) {
+                  arg == "-c" || arg == "-r" || arg == "-a" || arg == "-t" || arg == "--target") && i + 1 < argc) {
             std::string value = argv[++i];
 
             if (arg == "-s") config.lms_server = value;
@@ -166,7 +166,7 @@ Config parse_args(int argc, char* argv[]) {
             else if (arg == "-c") config.codecs = value;
             else if (arg == "-r") config.rates = value;
             else if (arg == "-a") config.sample_format = std::stoi(value);
-            else if (arg == "-t") config.diretta_target = std::stoi(value) - 1;  // Convert to 0-based
+            else if (arg == "-t" || arg == "--target") config.diretta_target = std::stoi(value) - 1;  // Convert to 0-based
         }
         else if (arg == "--thread-mode" && i + 1 < argc) {
             config.thread_mode = std::stoi(argv[++i]);
