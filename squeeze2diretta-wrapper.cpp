@@ -36,6 +36,7 @@
 #include <atomic>
 #include <sstream>
 #include <regex>
+#include <poll.h>
 
 // Version
 #define WRAPPER_VERSION "2.0.0"
@@ -625,6 +626,41 @@ int main(int argc, char* argv[]) {
 
             // Additional delay after close for DAC to fully stop
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+            // Drain residual data from pipe to avoid mixing old/new format data
+            // This discards any old format data still in the pipe buffer
+            {
+                struct pollfd pfd;
+                pfd.fd = fifo_fd;
+                pfd.events = POLLIN;
+
+                std::vector<uint8_t> drain_buffer(8192);
+                size_t total_drained = 0;
+
+                // Drain for up to 150ms or until no more data
+                auto drain_start = std::chrono::steady_clock::now();
+                while (true) {
+                    int ret = poll(&pfd, 1, 10);  // 10ms timeout
+                    if (ret > 0 && (pfd.revents & POLLIN)) {
+                        ssize_t drained = read(fifo_fd, drain_buffer.data(), drain_buffer.size());
+                        if (drained > 0) {
+                            total_drained += drained;
+                        }
+                    } else {
+                        break;  // No more data available
+                    }
+
+                    auto elapsed = std::chrono::steady_clock::now() - drain_start;
+                    if (elapsed > std::chrono::milliseconds(150)) {
+                        break;  // Timeout
+                    }
+                }
+
+                if (total_drained > 0) {
+                    std::cout << "[Format Transition] Drained " << total_drained
+                              << " bytes of residual data" << std::endl;
+                }
+            }
 
             // Update format
             // For DoP: isDSD=false because DirettaSync should treat it as PCM
