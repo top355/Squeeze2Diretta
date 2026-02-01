@@ -244,7 +244,7 @@ std::vector<std::string> build_squeezelite_args(const Config& config, const std:
     if (config.verbose) {
         args.push_back("all=info");  // Full debug output
     } else {
-        args.push_back("decode=info:output=info");  // Minimal for format detection
+        args.push_back("decode=info,output=info");  // Minimal for format detection
     }
 
     // Note: Sample rates already handled above (lines 171-177)
