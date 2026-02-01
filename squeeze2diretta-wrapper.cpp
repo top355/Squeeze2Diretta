@@ -240,12 +240,9 @@ std::vector<std::string> build_squeezelite_args(const Config& config, const std:
     // Debug logging - ALWAYS need decode+output for format detection
     // The monitor_squeezelite_stderr() function parses these logs to detect
     // sample rate and DSD format changes
+    // Note: Always use all=info as squeezelite may not support comma-separated modules
     args.push_back("-d");
-    if (config.verbose) {
-        args.push_back("all=info");  // Full debug output
-    } else {
-        args.push_back("decode=info,output=info");  // Minimal for format detection
-    }
+    args.push_back("all=info");
 
     // Note: Sample rates already handled above (lines 171-177)
 
