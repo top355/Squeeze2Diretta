@@ -627,8 +627,8 @@ int main(int argc, char* argv[]) {
             // Additional delay after close for DAC to fully stop
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
-            // Drain residual data from pipe to avoid mixing old/new format data
-            // This discards any old format data still in the pipe buffer
+            // Drain only immediately available residual data (non-blocking)
+            // This discards old format data without cutting into new audio
             {
                 struct pollfd pfd;
                 pfd.fd = fifo_fd;
@@ -637,26 +637,27 @@ int main(int argc, char* argv[]) {
                 std::vector<uint8_t> drain_buffer(8192);
                 size_t total_drained = 0;
 
-                // Drain for up to 150ms or until no more data
-                auto drain_start = std::chrono::steady_clock::now();
+                // Only drain what's immediately available (no waiting)
                 while (true) {
-                    int ret = poll(&pfd, 1, 10);  // 10ms timeout
+                    int ret = poll(&pfd, 1, 0);  // Non-blocking check
                     if (ret > 0 && (pfd.revents & POLLIN)) {
                         ssize_t drained = read(fifo_fd, drain_buffer.data(), drain_buffer.size());
                         if (drained > 0) {
                             total_drained += drained;
+                        } else {
+                            break;
                         }
                     } else {
                         break;  // No more data available
                     }
 
-                    auto elapsed = std::chrono::steady_clock::now() - drain_start;
-                    if (elapsed > std::chrono::milliseconds(150)) {
-                        break;  // Timeout
+                    // Safety limit: don't drain more than 64KB
+                    if (total_drained > 65536) {
+                        break;
                     }
                 }
 
-                if (total_drained > 0) {
+                if (total_drained > 0 && g_verbose) {
                     std::cout << "[Format Transition] Drained " << total_drained
                               << " bytes of residual data" << std::endl;
                 }
@@ -705,10 +706,10 @@ int main(int argc, char* argv[]) {
                 new_bytes_per_frame = (format.bitDepth / 8) * format.channels;
             }
 
-            // Send silence after opening to reduce click/pop when starting new format
-            // This gives the DAC time to stabilize before real audio arrives
+            // Send minimal silence after opening to reduce click/pop
+            // Keep it short to avoid truncating the beginning of audio
             {
-                const size_t SILENCE_FRAMES = 1024;  // ~20ms at 48kHz
+                const size_t SILENCE_FRAMES = 512;  // ~10ms at 48kHz
                 size_t silence_bytes = SILENCE_FRAMES * new_bytes_per_frame;
                 std::vector<uint8_t> silence_buffer(silence_bytes, 0);
 
@@ -717,17 +718,16 @@ int main(int argc, char* argv[]) {
                     std::fill(silence_buffer.begin(), silence_buffer.end(), 0x69);
                 }
 
-                // Send multiple silence buffers for smoother fade-in
-                // More buffers for PCM→DSD transition (DAC needs time to switch modes)
-                int num_buffers = format.isDSD ? 8 : 5;
+                // Send just 2-3 buffers to stabilize DAC without cutting audio
+                int num_buffers = format.isDSD ? 3 : 2;
                 for (int i = 0; i < num_buffers; i++) {
                     size_t silence_samples = format.isDSD ?
                         (silence_bytes * 8) / format.channels : SILENCE_FRAMES;
                     g_diretta->sendAudio(silence_buffer.data(), silence_samples);
                 }
 
-                // Delay to let DAC stabilize in new mode
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                // Short delay to let DAC stabilize
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
 
             // Use the already calculated bytes per frame for buffer sizing
