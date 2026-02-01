@@ -574,18 +574,21 @@ int main(int argc, char* argv[]) {
                     actual_rate = squeezelite_rate * 32;
                     bit_depth = 1;  // DSD is 1-bit
                 } else if (dsd_format == DSDFormatType::DOP) {
-                    // DoP: uses PCM container, keep frame rate as-is
-                    actual_rate = squeezelite_rate;
-                    bit_depth = 32;  // DoP uses 32-bit PCM container
+                    // DoP: Convert to native DSD for Diretta Target
+                    // DoP at 176400 Hz contains 16 DSD bits per sample → DSD64 at 2822400 Hz
+                    // DoP rate × 16 = DSD bit rate
+                    actual_rate = squeezelite_rate * 16;  // 176400 × 16 = 2822400 for DSD64
+                    bit_depth = 1;  // Native DSD is 1-bit
                 }
             }
 
-            // For DoP, treat as PCM for DirettaSync - the DAC will recognize DoP markers
-            bool diretta_is_dsd = is_dsd && (dsd_format != DSDFormatType::DOP);
+            // For DoP: convert to native DSD (Diretta Target may not support DoP passthrough)
+            bool diretta_is_dsd = is_dsd;  // Both native DSD and DoP→DSD are DSD for Diretta
 
             std::cout << "\n[Reopening Diretta] ";
             if (dsd_format == DSDFormatType::DOP) {
-                std::cout << "DoP (as PCM) at " << actual_rate << "Hz";
+                std::cout << "DoP→DSD (native) at " << actual_rate << "Hz";
+                std::cout << " (DoP rate: " << squeezelite_rate << " Hz)";
             } else if (is_dsd) {
                 std::cout << "DSD at " << actual_rate << "Hz";
                 std::cout << " (squeezelite frame rate: " << squeezelite_rate << " Hz)";
@@ -606,20 +609,23 @@ int main(int argc, char* argv[]) {
             format.bitDepth = bit_depth;  // 1 for native DSD, 32 for DoP/PCM
 
             // CRITICAL: Tell DirettaSync the source DSD format
-            // Since we're doing byte swap manually, tell DirettaSync data is MSB (DFF)
-            // to avoid bit-reversal - DirettaSync will only do final adjustments
-            if (diretta_is_dsd && (dsd_format == DSDFormatType::U32_BE || dsd_format == DSDFormatType::U32_LE)) {
+            // For native DSD and DoP→DSD conversion, use DFF (MSB) format
+            if (diretta_is_dsd) {
                 format.dsdFormat = AudioFormat::DSDFormat::DFF;  // MSB (no bit reversal by DirettaSync)
-                std::cout << "[DSD Format] Set to DFF (MSB) - we handle byte swap" << std::endl;
+                if (dsd_format == DSDFormatType::DOP) {
+                    std::cout << "[DSD Format] DoP→DSD conversion, output as DFF (MSB)" << std::endl;
+                } else {
+                    std::cout << "[DSD Format] Set to DFF (MSB) - we handle byte swap" << std::endl;
+                }
             }
 
             // Set rate for timing calculations
-            // For native DSD: use squeezelite frame rate (not bit rate)
-            // For PCM/DoP: use actual rate
-            if (is_dsd && (dsd_format == DSDFormatType::U32_BE || dsd_format == DSDFormatType::U32_LE)) {
-                rate_for_timing = squeezelite_rate;  // Frame rate (e.g., 88200 Hz)
+            // For native DSD and DoP: use squeezelite frame rate (not bit rate)
+            // For PCM: use actual rate
+            if (is_dsd) {
+                rate_for_timing = squeezelite_rate;  // Frame rate (e.g., 88200 Hz for native, 176400 Hz for DoP)
             } else {
-                rate_for_timing = actual_rate;  // PCM rate or DoP rate
+                rate_for_timing = actual_rate;  // PCM rate
             }
 
             // Reopen Diretta with new format
@@ -631,12 +637,12 @@ int main(int argc, char* argv[]) {
 
             // Recalculate bytes per frame for reading from squeezelite
             // Note: format.bitDepth is for DirettaSync (1 for DSD, 32 for PCM)
-            // But squeezelite always outputs S32_LE/BE (4 bytes per sample)
-            if (is_dsd && (dsd_format == DSDFormatType::U32_BE || dsd_format == DSDFormatType::U32_LE)) {
-                // Native DSD: squeezelite outputs S32_BE/LE (4 bytes/sample)
+            // But squeezelite always outputs S32_LE/BE (4 bytes per sample) for DSD/DoP
+            if (is_dsd) {
+                // Native DSD or DoP: squeezelite outputs S32 (4 bytes/sample)
                 bytes_per_frame = 4 * format.channels;  // 4 bytes * 2 ch = 8
             } else {
-                // DoP or PCM: use format.bitDepth
+                // PCM: use format.bitDepth
                 bytes_per_frame = (format.bitDepth / 8) * format.channels;
             }
             buffer_size = CHUNK_SIZE * bytes_per_frame;
@@ -648,7 +654,7 @@ int main(int argc, char* argv[]) {
 
             std::cout << "[Diretta Reopened] Ready for ";
             if (dsd_format == DSDFormatType::DOP) {
-                std::cout << "DoP";
+                std::cout << "DoP→DSD";
             } else if (diretta_is_dsd) {
                 std::cout << "DSD";
             } else {
@@ -711,9 +717,59 @@ int main(int argc, char* argv[]) {
 
         // Send to Diretta
         size_t written;
+        DSDFormatType current_dsd_format = static_cast<DSDFormatType>(g_dsd_format_type.load());
 
-        if (format.isDSD && (static_cast<DSDFormatType>(g_dsd_format_type.load()) == DSDFormatType::U32_BE ||
-                             static_cast<DSDFormatType>(g_dsd_format_type.load()) == DSDFormatType::U32_LE)) {
+        if (format.isDSD && current_dsd_format == DSDFormatType::DOP) {
+            // DoP → Native DSD conversion
+            // DoP format (S32_LE): [padding][DSD_LSB][DSD_MSB][marker]
+            // Each 32-bit sample contains 16 bits of DSD data
+            // Output: planar native DSD [L L L...][R R R...]
+
+            // Output is half the size (16 bits out of 32 bits per sample)
+            size_t dsd_bytes_per_frame = 2 * format.channels;  // 2 bytes per channel
+            size_t output_size = num_frames * dsd_bytes_per_frame;
+            std::vector<uint8_t> planar_buffer(output_size);
+            size_t bytes_per_channel = output_size / format.channels;
+
+            // Extract DSD data and de-interleave
+            for (size_t frame = 0; frame < num_frames; frame++) {
+                size_t src_offset = frame * bytes_per_frame;  // 8 bytes per stereo DoP frame
+                size_t dst_offset_L = frame * 2;  // 2 bytes per DSD group
+                size_t dst_offset_R = bytes_per_channel + frame * 2;
+
+                // Extract DSD from L channel (bytes 1-2 of 32-bit sample, MSB first for DFF)
+                planar_buffer[dst_offset_L + 0] = buffer[src_offset + 2];  // DSD MSB
+                planar_buffer[dst_offset_L + 1] = buffer[src_offset + 1];  // DSD LSB
+
+                // Extract DSD from R channel
+                planar_buffer[dst_offset_R + 0] = buffer[src_offset + 6];  // DSD MSB
+                planar_buffer[dst_offset_R + 1] = buffer[src_offset + 5];  // DSD LSB
+            }
+
+            // Debug: Show DoP conversion for first packet with real data
+            static bool shown_dop_conversion = false;
+            if (!shown_dop_conversion && buffer[3] != 0) {
+                shown_dop_conversion = true;
+                std::cout << "\n[DEBUG] DoP→DSD Conversion:" << std::endl;
+                std::cout << "  DoP marker (should be 0x05 or 0xFA): 0x"
+                          << std::hex << (int)buffer[3] << std::dec << std::endl;
+                std::cout << "  Input (DoP) 8 bytes: ";
+                for (int i = 0; i < 8; i++) printf("%02x ", buffer[i]);
+                std::cout << std::endl;
+                std::cout << "  Output (DSD) 4 bytes: ";
+                for (int i = 0; i < 2; i++) printf("%02x ", planar_buffer[i]);
+                std::cout << "| ";
+                for (int i = 0; i < 2; i++) printf("%02x ", planar_buffer[bytes_per_channel + i]);
+                std::cout << std::endl << std::endl;
+            }
+
+            // Calculate DSD samples for DirettaSync
+            // Each byte = 8 DSD bits, so total DSD bits = output_size * 8 / channels
+            num_samples = (output_size * 8) / format.channels;
+            written = g_diretta->sendAudio(planar_buffer.data(), num_samples);
+
+        } else if (format.isDSD && (current_dsd_format == DSDFormatType::U32_BE ||
+                                     current_dsd_format == DSDFormatType::U32_LE)) {
             // For native DSD: Convert from interleaved to planar format
             // Squeezelite sends: [L0L0L0L0 R0R0R0R0 L1L1L1L1 R1R1R1R1...]
             // DirettaSync expects: [L0L0L0L0 L1L1L1L1...][R0R0R0R0 R1R1R1R1...]
@@ -722,23 +778,24 @@ int main(int argc, char* argv[]) {
             size_t bytes_per_channel = bytes_read / format.channels;
 
             // De-interleave: separate L and R channels
-            // TESTING: Also reverse byte order in each 4-byte group (Big Endian → Little Endian)
+            // Squeezelite -D :u32be outputs Big Endian, DAC expects MSB
+            // Just de-interleave, no byte swap needed
             for (size_t frame = 0; frame < num_frames; frame++) {
                 size_t src_offset = frame * bytes_per_frame;
                 size_t dst_offset_L = frame * 4;  // 4 bytes per DSD group
                 size_t dst_offset_R = bytes_per_channel + frame * 4;
 
-                // Copy L channel with byte reversal (Big Endian → Little Endian)
-                planar_buffer[dst_offset_L + 0] = buffer[src_offset + 3];
-                planar_buffer[dst_offset_L + 1] = buffer[src_offset + 2];
-                planar_buffer[dst_offset_L + 2] = buffer[src_offset + 1];
-                planar_buffer[dst_offset_L + 3] = buffer[src_offset + 0];
+                // Copy L channel (no byte swap - keep Big Endian)
+                planar_buffer[dst_offset_L + 0] = buffer[src_offset + 0];
+                planar_buffer[dst_offset_L + 1] = buffer[src_offset + 1];
+                planar_buffer[dst_offset_L + 2] = buffer[src_offset + 2];
+                planar_buffer[dst_offset_L + 3] = buffer[src_offset + 3];
 
-                // Copy R channel with byte reversal
-                planar_buffer[dst_offset_R + 0] = buffer[src_offset + 7];
-                planar_buffer[dst_offset_R + 1] = buffer[src_offset + 6];
-                planar_buffer[dst_offset_R + 2] = buffer[src_offset + 5];
-                planar_buffer[dst_offset_R + 3] = buffer[src_offset + 4];
+                // Copy R channel (no byte swap)
+                planar_buffer[dst_offset_R + 0] = buffer[src_offset + 4];
+                planar_buffer[dst_offset_R + 1] = buffer[src_offset + 5];
+                planar_buffer[dst_offset_R + 2] = buffer[src_offset + 6];
+                planar_buffer[dst_offset_R + 3] = buffer[src_offset + 7];
             }
 
             // Debug: Show before/after conversion for first packet with real data
@@ -767,7 +824,7 @@ int main(int argc, char* argv[]) {
 
             written = g_diretta->sendAudio(planar_buffer.data(), num_samples);
         } else {
-            // PCM or DoP: send as-is (already in correct format)
+            // PCM: send as-is
             written = g_diretta->sendAudio(buffer.data(), num_samples);
         }
 
