@@ -167,7 +167,7 @@ Same as DirettaRendererUPnP - the build system automatically detects your CPU:
 
 The easiest way to install squeeze2diretta is using the interactive installer:
 
-\`\`\`bash
+```bash
 # 1. Download Diretta Host SDK first
 #    Visit: https://www.diretta.link/hostsdk.html
 #    Extract to: ~/DirettaHostSDK_148
@@ -213,12 +213,12 @@ The installer provides an interactive menu with options for:
 - **Aggressive optimization** (Fedora only) - For dedicated audio servers
 
 **Command-line options:**
-\`\`\`bash
+```bash
 ./install.sh --full       # Full installation (non-interactive)
 ./install.sh --build      # Build only
 ./install.sh --service    # Install systemd service only
 ./install.sh --help       # Show all options
-\`\`\`
+```
 
 ---
 
@@ -229,24 +229,24 @@ If you prefer manual control, follow these steps:
 #### 1. Install System Dependencies
 
 **Fedora:**
-\`\`\`bash
+```bash
 sudo dnf install -y gcc-c++ make cmake git patch \\
     alsa-lib-devel flac-devel libvorbis-devel \\
     libmad-devel mpg123-devel opus-devel soxr-devel openssl-devel
-\`\`\`
+```
 
 **Ubuntu/Debian:**
-\`\`\`bash
+```bash
 sudo apt install -y build-essential cmake git patch \\
     libasound2-dev libflac-dev libvorbis-dev \\
     libmad0-dev libmpg123-dev libopus-dev libsoxr-dev libssl-dev
-\`\`\`
+```
 
 **Arch/AudioLinux:**
-\`\`\`bash
+```bash
 sudo pacman -S base-devel cmake git patch \\
     alsa-lib flac libvorbis libmad mpg123 opus soxr openssl
-\`\`\`
+```
 
 #### 2. Download Diretta Host SDK
 
@@ -259,18 +259,18 @@ sudo pacman -S base-devel cmake git patch \\
 
 #### 3. Clone Repository
 
-\`\`\`bash
+```bash
 git clone https://github.com/cometdom/squeeze2diretta.git
 cd squeeze2diretta
-\`\`\`
+```
 
 #### 4. Setup Squeezelite
 
-\`\`\`bash
+```bash
 # Run automated setup (downloads, patches, compiles)
 chmod +x setup-squeezelite.sh
 ./setup-squeezelite.sh
-\`\`\`
+```
 
 **What the script does:**
 1. Clones Squeezelite from official repository
@@ -280,7 +280,7 @@ chmod +x setup-squeezelite.sh
 
 #### 5. Build squeeze2diretta
 
-\`\`\`bash
+```bash
 # Create build directory
 mkdir build && cd build
 
@@ -289,31 +289,31 @@ cmake ..
 make
 
 # Binary created at: build/squeeze2diretta
-\`\`\`
+```
 
 **Architecture override** (if auto-detection fails):
-\`\`\`bash
+```bash
 cmake -DARCH_NAME=x64-linux-15v3 ..      # For x64 with AVX2
 cmake -DARCH_NAME=aarch64-linux-15k16 .. # For Raspberry Pi
-\`\`\`
+```
 
 ### 6. Find Your Diretta Target
 
-\`\`\`bash
+```bash
 # List available Diretta targets on network
 ./build/squeeze2diretta --list-targets
-\`\`\`
+```
 
 Output example:
-\`\`\`
+```
 Found 2 Diretta target(s):
   [1] DDC-0_8A60 (192.168.1.50)
   [2] GentooPlayer_AB12 (192.168.1.51)
-\`\`\`
+```
 
 ### 7. Run squeeze2diretta
 
-\`\`\`bash
+```bash
 # Basic usage (replace with your LMS server IP and target number)
 ./build/squeeze2diretta \\
     --squeezelite ./squeezelite/squeezelite \\
@@ -333,7 +333,7 @@ Found 2 Diretta target(s):
     -r 768000 \\
     -s 192.168.1.100 \\
     --target 1
-\`\`\`
+```
 
 ### 8. Connect from LMS
 
@@ -348,25 +348,25 @@ Found 2 Diretta target(s):
 
 ### squeeze2diretta Options
 
-\`\`\`bash
+```bash
 --squeezelite <path>    Path to squeezelite binary (required)
 --target, -t <index>    Select Diretta target by index (required)
 --list-targets          List available Diretta targets and exit
 --verbose, -v           Enable verbose debug output
-\`\`\`
+```
 
 ### Squeezelite Options (passed through)
 
 Common options that squeeze2diretta passes to Squeezelite:
 
-\`\`\`bash
+```bash
 -s <server>            LMS server IP address
 -n <name>              Player name (default: squeeze2diretta)
 -M <model>             Model name (default: SqueezeLite)
 -r <rates>             Supported sample rates (e.g., 768000)
 -D :u32be              DSD output format (u32be = Big Endian U32)
 -d <categories>        Debug output (e.g., all=info)
-\`\`\`
+```
 
 ---
 
@@ -376,7 +376,7 @@ See [systemd/README.md](systemd/README.md) for detailed instructions on setting 
 
 **Quick example:**
 
-\`\`\`bash
+```bash
 # Install service file
 sudo cp systemd/squeeze2diretta.service /etc/systemd/system/
 
@@ -389,7 +389,7 @@ sudo systemctl enable --now squeeze2diretta
 
 # Check status
 sudo systemctl status squeeze2diretta
-\`\`\`
+```
 
 ---
 
