@@ -25,8 +25,12 @@ CMD="$CMD --target $TARGET"
 CMD="$CMD -n $PLAYER_NAME"
 CMD="$CMD -r $MAX_SAMPLE_RATE"
 # DSD format - only add if not empty
+# Add colon prefix if not already present
 if [ -n "$DSD_FORMAT" ]; then
-    CMD="$CMD -D $DSD_FORMAT"
+    case "$DSD_FORMAT" in
+        :*) CMD="$CMD -D $DSD_FORMAT" ;;
+        *)  CMD="$CMD -D :$DSD_FORMAT" ;;
+    esac
 fi
 
 # Optional verbose mode
