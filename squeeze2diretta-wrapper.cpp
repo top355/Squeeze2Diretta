@@ -715,7 +715,7 @@ int main(int argc, char* argv[]) {
                 std::cout << std::endl << std::endl;
             }
 
-            written = g_diretta->sendAudio(planar_buffer.data(), num_samples)
+            written = g_diretta->sendAudio(planar_buffer.data(), num_samples);
         } else {
             // PCM or DoP: send as-is (already in correct format)
             written = g_diretta->sendAudio(buffer.data(), num_samples);
