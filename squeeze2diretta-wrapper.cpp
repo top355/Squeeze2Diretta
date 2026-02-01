@@ -228,19 +228,9 @@ std::vector<std::string> build_squeezelite_args(const Config& config, const std:
         args.push_back(config.codecs);
     }
 
-    // Enable DSD output (DoP or native)
-    if (!config.dsd_format.empty()) {
-        args.push_back("-D");
-        if (config.dsd_format != "dop") {
-            // Native DSD format - add colon prefix if not present
-            std::string dsd_arg = config.dsd_format;
-            if (dsd_arg[0] != ':') {
-                dsd_arg = ":" + dsd_arg;
-            }
-            args.push_back(dsd_arg);
-        }
-        // If "dop", -D alone enables DoP
-    }
+    // Enable native DSD output - always use :u32be for Diretta
+    args.push_back("-D");
+    args.push_back(":u32be");
 
     // Debug logging (if verbose)
     if (config.verbose) {
