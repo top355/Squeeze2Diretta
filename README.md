@@ -150,7 +150,7 @@ Same as DirettaRendererUPnP - the build system automatically detects your CPU:
 - **Minimum**: Dual-core CPU, 1GB RAM, Gigabit Ethernet
 - **Recommended**: Quad-core CPU, 2GB RAM, 2.5/10G Ethernet with jumbo frames
 - **Network**: Gigabit Ethernet minimum (10G recommended for DSD256+)
-- **MTU**: 1500 bytes minimum, 9000+ recommended for DSD
+- **MTU**: 1500 minimum, jumbo frames recommended (9014 or 16128, must match Diretta Target)
 
 ### Software Requirements
 - **OS**: Linux with kernel 4.x+ (RT kernel recommended)
