@@ -629,7 +629,7 @@ WRAPPER_EOF
 # REQUIRED SETTINGS - You MUST configure these
 # ============================================================================
 
-# LMS (Logitech Media Server) IP address
+# LMS (Lyrion Music Server) IP address
 # This is the server running LMS that has your music library
 LMS_SERVER=192.168.1.100
 

@@ -36,7 +36,7 @@ This tool uses the **Diretta Host SDK**, which is proprietary software by Yu Har
 
 ## Overview
 
-**squeeze2diretta** bridges Logitech Media Server (LMS) and Squeezelite to Diretta protocol endpoints, enabling bit-perfect playback of high-resolution PCM and native DSD through Diretta Targets. It uses the advanced DirettaSync implementation from DirettaRendererUPnP v2.0 for low-latency, high-quality audio streaming.
+**squeeze2diretta** bridges Lyrion Music Server (LMS) and Squeezelite to Diretta protocol endpoints, enabling bit-perfect playback of high-resolution PCM and native DSD through Diretta Targets. It uses the advanced DirettaSync implementation from DirettaRendererUPnP v2.0 for low-latency, high-quality audio streaming.
 
 ### What is This?
 
@@ -60,7 +60,7 @@ This tool acts as a **wrapper** that:
 
 ```
 +---------------------------+
-|  Logitech Media Server    |  (LMS on any network device)
+|  Lyrion Music Server    |  (LMS on any network device)
 +-------------+-------------+
               |
               | HTTP Streaming
@@ -156,7 +156,7 @@ Same as DirettaRendererUPnP - the build system automatically detects your CPU:
 - **OS**: Linux with kernel 4.x+ (RT kernel recommended)
 - **Diretta Host SDK**: Version 148 or 147 ([download here](https://www.diretta.link/hostsdk.html))
 - **Squeezelite**: Compiled with native DSD support (included setup script)
-- **LMS**: Logitech Media Server running on your network
+- **LMS**: Lyrion Music Server running on your network
 - **Build tools**: gcc/g++ 7.0+, make, CMake 3.10+
 
 ---
@@ -393,7 +393,7 @@ The `DSD_FORMAT` setting is critical for proper DSD playback:
 
 | Source | DSD_FORMAT | Description |
 |--------|------------|-------------|
-| **LMS (Logitech Media Server)** | `u32be` | Native DSD Big Endian. LMS sends true DSD data. |
+| **LMS (Lyrion Music Server)** | `u32be` | Native DSD Big Endian. LMS sends true DSD data. |
 | **Roon** | `dop` | DoP (DSD over PCM). Roon's Squeezebox emulation only supports DoP. |
 
 **For LMS users:**
@@ -456,7 +456,7 @@ sudo systemctl status squeeze2diretta
 
 - **Squeezelite** - **Ralph Irving** and contributors ([GitHub](https://github.com/ralph-irving/squeezelite))
 
-- **Logitech Media Server** - Open source audio streaming server
+- **Lyrion Music Server** - Open source audio streaming server
 
 ### Special Thanks
 
