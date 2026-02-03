@@ -73,27 +73,41 @@ if(BASE_ARCH STREQUAL "x64")
     endif()
     
 elseif(BASE_ARCH STREQUAL "aarch64")
-    # aarch64: Check kernel version
-    execute_process(
-        COMMAND uname -r
-        COMMAND cut -d. -f1-2
-        OUTPUT_VARIABLE KERNEL_VER
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    
-    string(REPLACE "." ";" KERNEL_VER_LIST ${KERNEL_VER})
-    list(GET KERNEL_VER_LIST 0 KERNEL_MAJOR)
-    list(GET KERNEL_VER_LIST 1 KERNEL_MINOR)
-    
-    # Use k16 variant if kernel >= 4.16
-    if((KERNEL_MAJOR GREATER 4) OR (KERNEL_MAJOR EQUAL 4 AND KERNEL_MINOR GREATER_EQUAL 16))
+    # aarch64: Use k16 variant ONLY on Raspberry Pi 5 (not based on kernel version)
+    set(IS_RPI5 FALSE)
+    set(DT_MODEL "")
+
+    # Prefer /proc/device-tree/model, fallback to /sys/firmware/devicetree/base/model
+    if(EXISTS "/proc/device-tree/model")
+        execute_process(
+            COMMAND sh -c "tr -d '\\0' < /proc/device-tree/model"
+            OUTPUT_VARIABLE DT_MODEL
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    elseif(EXISTS "/sys/firmware/devicetree/base/model")
+        execute_process(
+            COMMAND sh -c "tr -d '\\0' < /sys/firmware/devicetree/base/model"
+            OUTPUT_VARIABLE DT_MODEL
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    endif()
+
+    if(DT_MODEL MATCHES "Raspberry Pi 5")
+        set(IS_RPI5 TRUE)
+    endif()
+
+    if(IS_RPI5)
         set(DEFAULT_VARIANT "aarch64-linux-15k16")
-        set(CPU_DESC "Kernel ${KERNEL_VER} (using k16 variant)")
+        set(CPU_DESC "Raspberry Pi 5 detected (using k16 variant)")
     else()
         set(DEFAULT_VARIANT "aarch64-linux-15")
-        set(CPU_DESC "Kernel ${KERNEL_VER} (using standard variant)")
+        if(DT_MODEL STREQUAL "")
+            set(CPU_DESC "Non-RPi5 ARM64 (using standard variant)")
+        else()
+            set(CPU_DESC "Non-RPi5 ARM64 (${DT_MODEL}) (using standard variant)")
+        endif()
     endif()
-    
+
 elseif(BASE_ARCH STREQUAL "riscv64")
     set(DEFAULT_VARIANT "riscv64-linux-15")
     set(CPU_DESC "RISC-V 64-bit")
