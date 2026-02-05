@@ -1,4 +1,4 @@
-# squeeze2diretta v1.0.0
+# squeeze2diretta v1.0.1
 
 **Squeezelite to Diretta Bridge - Native DSD & Hi-Res PCM Streaming**
 
@@ -8,7 +8,7 @@
 
 ---
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)
 ![DSD](https://img.shields.io/badge/DSD-Native-green.svg)
 ![SDK](https://img.shields.io/badge/SDK-DIRETTA::Sync-orange.svg)
 
@@ -222,6 +222,30 @@ The installer provides an interactive menu with options for:
 
 ---
 
+### Upgrading from v1.0.0 to v1.0.1
+
+The configuration file format has changed in v1.0.1. You **must** remove the old configuration files before upgrading:
+
+```bash
+# 1. Stop the service
+sudo systemctl stop squeeze2diretta
+
+# 2. Remove old configuration files
+sudo rm -f /opt/squeeze2diretta/squeeze2diretta.conf
+sudo rm -f /opt/squeeze2diretta/start-squeeze2diretta.sh
+
+# 3. Pull the latest version and re-run the installer
+cd squeeze2diretta
+git pull
+./install.sh
+```
+
+Your previous settings (LMS server IP, target number, player name, etc.) will need to be re-entered in the new configuration file. The installer will open the configuration editor automatically after installation.
+
+See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
+
+---
+
 ### Option B: Manual Installation
 
 If you prefer manual control, follow these steps:
@@ -353,6 +377,7 @@ Found 2 Diretta target(s):
 --target, -t <index>    Select Diretta target by index (required)
 --list-targets          List available Diretta targets and exit
 --verbose, -v           Enable verbose debug output
+-W                      Enable WAV/AIFF header parsing in Squeezelite
 ```
 
 ### Squeezelite Options (passed through)
@@ -370,10 +395,10 @@ Common options that squeeze2diretta passes to Squeezelite:
 
 ### Configuration File (squeeze2diretta.conf)
 
-When using the systemd service, all settings are stored in `/etc/squeeze2diretta.conf`. Edit this file to customize your installation:
+When using the systemd service, all settings are stored in `/opt/squeeze2diretta/squeeze2diretta.conf`. Edit this file to customize your installation:
 
 ```bash
-sudo nano /etc/squeeze2diretta.conf
+sudo nano /opt/squeeze2diretta/squeeze2diretta.conf
 ```
 
 **Key settings:**
@@ -386,6 +411,7 @@ sudo nano /etc/squeeze2diretta.conf
 | `MAX_SAMPLE_RATE` | Maximum sample rate in Hz | `768000` |
 | `DSD_FORMAT` | DSD output format (see below) | `u32be` |
 | `PAUSE_ON_START` | Pause playback when service starts (prevents auto-resume) | `no` |
+| `WAV_HEADER` | Read format from WAV/AIFF headers instead of server parameters | `no` |
 | `VERBOSE` | Set to `-v` for debug output | (empty) |
 
 ### DSD Format: LMS vs Roon
@@ -399,14 +425,14 @@ The `DSD_FORMAT` setting is critical for proper DSD playback:
 
 **For LMS users:**
 ```bash
-# In /etc/squeeze2diretta.conf
+# In /opt/squeeze2diretta/squeeze2diretta.conf
 DSD_FORMAT=u32be
 ```
 LMS can send native DSD directly to Squeezelite, providing the best quality path.
 
 **For Roon users:**
 ```bash
-# In /etc/squeeze2diretta.conf
+# In /opt/squeeze2diretta/squeeze2diretta.conf
 DSD_FORMAT=dop
 ```
 Roon's Squeezebox protocol emulation has limitations and sends DSD as DoP (DSD over PCM). squeeze2diretta automatically converts DoP back to native DSD for the Diretta Target.
@@ -481,4 +507,4 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Enjoy native DSD and hi-res PCM streaming from your LMS library!**
 
-*Last updated: 2026-02-01*
+*Last updated: 2026-02-05*

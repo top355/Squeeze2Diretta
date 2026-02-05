@@ -186,10 +186,10 @@ namespace DirettaRetry {
 
 namespace DirettaBuffer {
     constexpr float DSD_BUFFER_SECONDS = 0.8f;
-    constexpr float PCM_BUFFER_SECONDS = 0.3f;  // Was 1.0f - low latency
+    constexpr float PCM_BUFFER_SECONDS = 0.5f;  // Balance: low latency + resilience
 
     constexpr size_t DSD_PREFILL_MS = 200;
-    constexpr size_t PCM_PREFILL_MS = 30;       // Was 50 - faster start
+    constexpr size_t PCM_PREFILL_MS = 50;       // Restored from 30 for stability
     constexpr size_t PCM_LOWRATE_PREFILL_MS = 100;
 
     // Aligned prefill targets (for whole-buffer alignment)

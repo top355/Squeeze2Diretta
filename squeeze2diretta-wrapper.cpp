@@ -39,7 +39,7 @@
 #include <poll.h>
 
 // Version
-#define WRAPPER_VERSION "2.0.0"
+#define WRAPPER_VERSION "1.0.1"
 
 // DSD format types
 enum class DSDFormatType {
@@ -53,7 +53,7 @@ enum class DSDFormatType {
 static pid_t squeezelite_pid = 0;
 static bool running = true;
 static std::unique_ptr<DirettaSync> g_diretta;  // For signal handler access
-static std::atomic<unsigned int> g_current_sample_rate{44100};  // Current detected sample rate (frame rate from squeezelite)
+static std::atomic<unsigned int> g_current_sample_rate{0};  // Current detected sample rate (0 = not yet detected)
 static std::atomic<bool> g_is_dsd{false};  // Current format is DSD (DoP or native)
 static std::atomic<int> g_dsd_format_type{static_cast<int>(DSDFormatType::NONE)};  // Specific DSD format type
 static std::atomic<bool> g_need_reopen{false};  // Flag when Diretta needs to be reopened
@@ -80,6 +80,7 @@ struct Config {
     std::string rates = "";              // -r
     int sample_format = 24;              // -a (16, 24, or 32)
     std::string dsd_format = ":u32be";   // -D [format]: "dop" for DoP, ":u32be" (default) or ":u32le" for native DSD
+    bool wav_header = false;             // -W: Read WAV/AIFF headers, ignore server parameters
 
     // Diretta options
     int diretta_target = 0;              // 0-based index (-1 = auto first)
@@ -112,6 +113,7 @@ void print_usage(const char* prog) {
     std::cout << "                          -D           = DoP (DSD over PCM)" << std::endl;
     std::cout << "                          -D :u32be    = Native DSD Big Endian (MSB)" << std::endl;
     std::cout << "                          -D :u32le    = Native DSD Little Endian (LSB)" << std::endl;
+    std::cout << "  -W                    Read WAV/AIFF headers, ignore server parameters" << std::endl;
     std::cout << std::endl;
     std::cout << "Diretta Options:" << std::endl;
     std::cout << "  -t, --target <number> Diretta target number (default: 1 = first)" << std::endl;
@@ -147,6 +149,9 @@ Config parse_args(int argc, char* argv[]) {
         }
         else if (arg == "-v") {
             config.verbose = true;
+        }
+        else if (arg == "-W") {
+            config.wav_header = true;
         }
         else if (arg == "-D") {
             // Check if next arg is a DSD format specifier (starts with :)
@@ -192,6 +197,12 @@ std::vector<std::string> build_squeezelite_args(const Config& config, const std:
     std::vector<std::string> args;
 
     args.push_back(config.squeezelite_path);
+
+    // WAV/AIFF header parsing (squeezelite -W)
+    // Read format from WAV/AIFF headers instead of trusting server parameters
+    if (config.wav_header) {
+        args.push_back("-W");
+    }
 
     // Output to stdout ("-") - squeezelite outputs raw S32_LE at native sample rate
     args.push_back("-o");
@@ -579,6 +590,55 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Connected to Diretta DAC" << std::endl;
+    std::cout << std::endl;
+
+    // ================================================================
+    // Wait for first track format detection
+    // ================================================================
+    // The initial Diretta open uses a default 44100Hz format. If the first
+    // track is at a different rate (e.g., 192kHz), audio data would arrive
+    // before the stderr monitor detects the actual format, causing noise.
+    // By waiting here, we ensure the first track goes through the
+    // reopen+burst-fill path with the correct format.
+    std::cout << "Waiting for first track..." << std::endl;
+    {
+        auto wait_start = std::chrono::steady_clock::now();
+        const auto format_wait_timeout = std::chrono::seconds(60);
+        size_t pre_drain_bytes = 0;
+
+        while (running && !g_need_reopen.load()) {
+            // Timeout safety - fall back to default 44100Hz
+            if (std::chrono::steady_clock::now() - wait_start > format_wait_timeout) {
+                std::cerr << "WARNING: No format detected after 60s, proceeding with default" << std::endl;
+                break;
+            }
+
+            // Drain any pre-format data from pipe to prevent squeezelite from blocking
+            struct pollfd pfd = {fifo_fd, POLLIN, 0};
+            int ret = poll(&pfd, 1, 100);  // 100ms poll interval
+            if (ret > 0 && (pfd.revents & POLLIN)) {
+                uint8_t drain[16384];
+                ssize_t n = read(fifo_fd, drain, sizeof(drain));
+                if (n == 0) {
+                    std::cout << "Squeezelite pipe closed during format wait" << std::endl;
+                    running = false;
+                    break;
+                }
+                if (n > 0) {
+                    pre_drain_bytes += n;
+                }
+            }
+        }
+
+        if (pre_drain_bytes > 0 && g_verbose) {
+            std::cout << "[Format Wait] Drained " << pre_drain_bytes
+                      << " bytes of pre-format data" << std::endl;
+        }
+        if (g_need_reopen.load()) {
+            std::cout << "First track format detected - will open with correct format" << std::endl;
+        }
+    }
+
     std::cout << "Streaming audio..." << std::endl;
     std::cout << std::endl;
 
