@@ -87,17 +87,32 @@ echo ""
 
 # Function to send pause command to LMS
 send_pause_command() {
-    # Wait for squeezelite to connect to LMS
-    sleep 0.5
-
     # URL-encode the player name (replace spaces with %20)
     ENCODED_NAME=$(echo "$PLAYER_NAME" | sed 's/ /%20/g')
 
-    # Send pause command via LMS CLI (port 9090)
-    # Format: <playerid> pause 1
-    echo "$ENCODED_NAME pause 1" | nc -w 2 "$LMS_SERVER" 9090 > /dev/null 2>&1 || true
+    # Wait for squeezelite to register with LMS before sending pause.
+    # Startup sequence: Diretta init (~1s) + fork squeezelite + LMS connection (~2-3s)
+    # We poll LMS every 2s to check if our player has appeared.
+    MAX_WAIT=30
+    WAITED=0
 
-    echo "[PAUSE_ON_START] Sent pause command to LMS for player: $PLAYER_NAME"
+    while [ $WAITED -lt $MAX_WAIT ]; do
+        sleep 2
+        WAITED=$((WAITED + 2))
+
+        # Query LMS for connected players and check if ours is listed
+        PLAYERS=$(echo "players 0 100" | nc -w 2 "$LMS_SERVER" 9090 2>/dev/null || true)
+        if echo "$PLAYERS" | grep -qi "$PLAYER_NAME"; then
+            # Player found on LMS - send pause command
+            echo "$ENCODED_NAME pause 1" | nc -w 2 "$LMS_SERVER" 9090 > /dev/null 2>&1 || true
+            echo "[PAUSE_ON_START] Sent pause command to LMS for player: $PLAYER_NAME (after ${WAITED}s)"
+            return 0
+        fi
+    done
+
+    # Timeout - send pause anyway as a last resort
+    echo "[PAUSE_ON_START] WARNING: Player '$PLAYER_NAME' not found on LMS after ${MAX_WAIT}s, sending pause anyway"
+    echo "$ENCODED_NAME pause 1" | nc -w 2 "$LMS_SERVER" 9090 > /dev/null 2>&1 || true
 }
 
 # If PAUSE_ON_START is enabled, run pause command in background
