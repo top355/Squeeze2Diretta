@@ -93,12 +93,12 @@ send_pause_command() {
     # Wait for squeezelite to register with LMS before sending pause.
     # Startup sequence: Diretta init (~1s) + fork squeezelite + LMS connection (~2-3s)
     # We poll LMS every 2s to check if our player has appeared.
-    MAX_WAIT=30
+    MAX_WAIT=2
     WAITED=0
 
     while [ $WAITED -lt $MAX_WAIT ]; do
-        sleep 0.5
-        WAITED=$((WAITED + 2))
+        sleep 1
+        WAITED=$((WAITED + 1))
 
         # Query LMS for connected players and check if ours is listed
         PLAYERS=$(echo "players 0 100" | nc -w 2 "$LMS_SERVER" 9090 2>/dev/null || true)
