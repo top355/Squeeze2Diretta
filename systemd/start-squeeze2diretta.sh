@@ -97,7 +97,7 @@ send_pause_command() {
     WAITED=0
 
     while [ $WAITED -lt $MAX_WAIT ]; do
-        sleep 1
+        sleep 0.5
         WAITED=$((WAITED + 2))
 
         # Query LMS for connected players and check if ours is listed

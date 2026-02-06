@@ -20,7 +20,9 @@
 #include <type_traits>
 
 // Architecture detection for SIMD support
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+// Require both x86 platform AND AVX2 compiler flag (-mavx2 or -march=x86-64-v3+)
+// x86-64-v2 builds (pre-Haswell CPUs) will use scalar fallbacks
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && defined(__AVX2__)
     #define DIRETTA_HAS_AVX2 1
     #include <immintrin.h>
 #else

@@ -33,6 +33,19 @@ in the new configuration file.
   different scheduling characteristics (RT kernels, slower CPUs)
   - `PCM_BUFFER_SECONDS`: 0.3s -> 0.5s
   - `PCM_PREFILL_MS`: 30ms -> 50ms
+- **DSD playback broken when `-a 24` was set** (DSD files played as PCM at 352.8kHz)
+  - Root cause: wrapper incorrectly converted S32_LE to packed S24_3LE (3 bytes/sample)
+    but DirettaSync always expects 4-byte padded input for 24-bit audio.
+  - Fix: removed wrapper-side bit depth conversion; DirettaSync handles 32→24/16 conversion
+    internally via `configureRingPCM(inputBps=4, direttaBps=3)`.
+- **PAUSE_ON_START not working** since start script changes
+  - Root cause: `sleep 0.5` was too short; squeezelite hadn't registered with LMS yet.
+  - Fix: polls LMS CLI (`players 0 100`) every 2s until player appears (max 30s).
+- **Build failure on pre-AVX2 x86 CPUs** (x86-64-v2 variant)
+  - Root cause: `DirettaRingBuffer.h` defined `DIRETTA_HAS_AVX2=1` for all x86 platforms,
+    causing AVX2 intrinsics to be compiled even without `-mavx2` compiler flag.
+  - Fix: guard now requires both x86 platform AND `__AVX2__` compiler define.
+  - CPUs without AVX2 (pre-Haswell/Skylake) now use scalar fallbacks correctly.
 
 ### Added
 - **Burst-fill mechanism** for format transitions (SwissMountainBear)
@@ -48,7 +61,7 @@ in the new configuration file.
 - **TARGET_MARCH** cmake option for cross-compilation (for Audiolinux/Piero)
 - **ARM64 page size detection** using `getconf PAGESIZE` (Filippo/GentooPlayer)
 - **`-a` option** (PCM bit depth) for DACs not supporting 32-bit
-  - Truncates squeezelite 32-bit output to 24-bit or 16-bit before streaming
+  - Sets Diretta output bit depth to 24-bit or 16-bit (DirettaSync handles conversion internally)
   - Configurable via command line (`-a 24`) or config file (`SAMPLE_FORMAT=24`)
   - Default: 32 (no conversion)
 - **PAUSE_ON_START** option to pause playback on service start
