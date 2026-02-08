@@ -60,7 +60,7 @@ This tool acts as a **wrapper** that:
 
 ```
 +---------------------------+
-|  Lyrion Music Server    |  (LMS on any network device)
+|  Lyrion Music Server      |  (LMS on any network device)
 +-------------+-------------+
               |
               | HTTP Streaming
@@ -70,7 +70,7 @@ This tool acts as a **wrapper** that:
 |                                                             |
 |  +------------------+        +---------------------------+  |
 |  |   Squeezelite    | -----> |      DirettaSync          |  |
-|  |   (decoder)      | stdout |  (from DirettaRendererUPnP)|  |
+|  |   (decoder)      | stdout |                           |  |
 |  |                  |  pipe  |                           |  |
 |  |  - DSF/DFF->DSD  |        |  - Format conversion      |  |
 |  |  - FLAC->PCM     |        |  - SIMD optimizations     |  |
@@ -83,8 +83,8 @@ This tool acts as a **wrapper** that:
                                              |
                                              v
                          +-------------------+-------------------+
-                         |           Diretta TARGET             |
-                         |  (Memory Play, GentooPlayer, DDC-0)  |
+                         |           Diretta TARGET              |
+                         |Audiolinux, GentooPlayer, DDC-0-DDC-00 |
                          +-------------------+-------------------+
                                              |
                                              v
