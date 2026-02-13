@@ -222,25 +222,25 @@ The installer provides an interactive menu with options for:
 
 ---
 
-### Upgrading from v1.0.0 to v1.0.1
+### Upgrading from v1.x to v2.0.0
 
-The configuration file format has changed in v1.0.1. You **must** remove the old configuration files before upgrading:
+v2.0 uses **in-band format headers** instead of stderr log parsing. You **must** rebuild squeezelite with the new patch:
 
 ```bash
 # 1. Stop the service
 sudo systemctl stop squeeze2diretta
 
-# 2. Remove old configuration files
-sudo rm -f /opt/squeeze2diretta/squeeze2diretta.conf
-sudo rm -f /opt/squeeze2diretta/start-squeeze2diretta.sh
+# 2. Remove old squeezelite and rebuild with new patch
+rm -rf squeezelite/
 
 # 3. Pull the latest version and re-run the installer
 cd squeeze2diretta
 git pull
+./setup-squeezelite.sh
 ./install.sh
 ```
 
-Your previous settings (LMS server IP, target number, player name, etc.) will need to be re-entered in the new configuration file. The installer will open the configuration editor automatically after installation.
+The old `squeezelite-stdout-flush.patch` is replaced by `squeezelite-format-header.patch`. Your configuration file (`squeeze2diretta.conf`) is compatible and does not need to be recreated.
 
 See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
 
@@ -298,7 +298,7 @@ chmod +x setup-squeezelite.sh
 
 **What the script does:**
 1. Clones Squeezelite from official repository
-2. Applies stdout flush patch (required for pipe mode)
+2. Applies format header patch (required for in-band format signaling)
 3. Compiles with native DSD support enabled
 4. Creates \`squeezelite/squeezelite\` binary ready to use
 
@@ -536,4 +536,4 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Enjoy native DSD and hi-res PCM streaming from your LMS library!**
 
-*Last updated: 2026-02-05*
+*Last updated: 2026-02-13*
