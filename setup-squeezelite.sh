@@ -82,22 +82,21 @@ check_dependencies() {
     return $missing
 }
 
-# Manual patching fallback: copy the pre-patched output_stdout.c
+# Manual patching fallback: apply patch using git apply
 apply_manual_patch() {
-    echo -e "${GREEN}Applying manual patch (copying pre-patched output_stdout.c)...${NC}"
+    local patch_file="$1"
+    echo -e "${GREEN}Trying git apply...${NC}"
 
-    if [ -f "$SCRIPT_DIR/squeezelite/output_stdout.c" ]; then
-        # Use our pre-patched version from the squeeze2diretta repo
-        cp "$SCRIPT_DIR/squeezelite/output_stdout.c" output_stdout.c
-        if grep -q "sq_format_header" output_stdout.c; then
-            echo -e "${GREEN}Manual patch applied successfully (copied pre-patched file)${NC}"
-        else
-            echo -e "${RED}Failed to apply manual patch${NC}"
-            exit 1
-        fi
+    if git apply "$patch_file" 2>/dev/null; then
+        echo -e "${GREEN}Patch applied successfully (git apply)${NC}"
+    elif git apply --3way "$patch_file" 2>/dev/null; then
+        echo -e "${GREEN}Patch applied successfully (git apply --3way)${NC}"
     else
-        echo -e "${RED}Pre-patched output_stdout.c not found${NC}"
-        echo "The squeeze2diretta source tree may be incomplete."
+        echo -e "${RED}Failed to apply patch${NC}"
+        echo "The patch may not be compatible with this version of squeezelite."
+        echo "Try removing the squeezelite directory and re-running this script:"
+        echo "  rm -rf $SCRIPT_DIR/squeezelite"
+        echo "  ./setup-squeezelite.sh"
         exit 1
     fi
 }
@@ -132,8 +131,7 @@ main() {
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 echo -e "${GREEN}Resetting squeezelite to clean state...${NC}"
                 cd squeezelite
-                git fetch origin
-                git reset --hard origin/master
+                git checkout -- .
                 git clean -fd
                 cd "$SCRIPT_DIR"
             else
@@ -202,12 +200,13 @@ main() {
                     exit 1
                 fi
             else
-                echo -e "${YELLOW}Patch file format doesn't match, trying manual patch...${NC}"
-                apply_manual_patch
+                echo -e "${YELLOW}Patch file format doesn't match, trying alternative methods...${NC}"
+                apply_manual_patch "$PATCH_FILE"
             fi
         else
-            echo -e "${YELLOW}No patch file found, applying manual patch...${NC}"
-            apply_manual_patch
+            echo -e "${RED}No patch file found${NC}"
+            echo "Expected: $SCRIPT_DIR/squeezelite-format-header.patch"
+            exit 1
         fi
     fi
 
