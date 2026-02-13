@@ -516,16 +516,8 @@ bool DirettaSync::open(const AudioFormat& format) {
                           << "ms for target to reset..." << std::endl;
                 interruptibleWait(m_transitionMutex, m_transitionCv, m_transitionWakeup, resetDelayMs);
 
-                // Reopen DIRETTA::Sync fresh
-                ACQUA::Clock cycleTime = ACQUA::Clock::MicroSeconds(m_config.cycleTime);
-                if (!DIRETTA::Sync::open(
-                        DIRETTA::Sync::THRED_MODE(m_config.threadMode),
-                        cycleTime, 0, "DirettaRenderer", 0x44525400,
-                        -1, -1, 0, DIRETTA::Sync::MSMODE_MS3)) {
-                    std::cerr << "[DirettaSync] Failed to re-open DIRETTA::Sync" << std::endl;
-                    return false;
-                }
-                std::cout << "[DirettaSync] DIRETTA::Sync reopened" << std::endl;
+                // Mark SDK as closed — will be freshly reopened via openSyncConnection()
+                m_sdkOpen = false;
 
                 // Fall through to full open path (needFullConnect is already true)
             } else if (isPcmRateChange) {
@@ -564,16 +556,8 @@ bool DirettaSync::open(const AudioFormat& format) {
                           << "ms for target to reset..." << std::endl;
                 interruptibleWait(m_transitionMutex, m_transitionCv, m_transitionWakeup, resetDelayMs);
 
-                // Reopen DIRETTA::Sync fresh
-                ACQUA::Clock cycleTime = ACQUA::Clock::MicroSeconds(m_config.cycleTime);
-                if (!DIRETTA::Sync::open(
-                        DIRETTA::Sync::THRED_MODE(m_config.threadMode),
-                        cycleTime, 0, "DirettaRenderer", 0x44525400,
-                        -1, -1, 0, DIRETTA::Sync::MSMODE_MS3)) {
-                    std::cerr << "[DirettaSync] Failed to re-open DIRETTA::Sync" << std::endl;
-                    return false;
-                }
-                std::cout << "[DirettaSync] DIRETTA::Sync reopened" << std::endl;
+                // Mark SDK as closed — will be freshly reopened via openSyncConnection()
+                m_sdkOpen = false;
 
                 // Fall through to full open path
             } else {
@@ -635,30 +619,61 @@ bool DirettaSync::open(const AudioFormat& format) {
                               << "ms for target to reset..." << std::endl;
                     interruptibleWait(m_transitionMutex, m_transitionCv, m_transitionWakeup, resetDelayMs);
 
-                    // Reopen DIRETTA::Sync fresh
-                    ACQUA::Clock cycleTime = ACQUA::Clock::MicroSeconds(m_config.cycleTime);
-                    if (!DIRETTA::Sync::open(
-                            DIRETTA::Sync::THRED_MODE(m_config.threadMode),
-                            cycleTime, 0, "DirettaRenderer", 0x44525400,
-                            -1, -1, 0, DIRETTA::Sync::MSMODE_MS3)) {
-                        std::cerr << "[DirettaSync] Failed to re-open DIRETTA::Sync" << std::endl;
-                        return false;
-                    }
-                    std::cout << "[DirettaSync] DIRETTA::Sync reopened" << std::endl;
+                    // Mark SDK as closed — will be freshly reopened via openSyncConnection()
+                    m_sdkOpen = false;
 
                     // Fall through to full open path
                 } else {
-                    // Different clock family or low-rate: reopenForFormatChange() is sufficient
-                    // Cross-family transitions naturally reset the PLL
-                    std::cout << "[DirettaSync] Format change - reopen" << std::endl;
-                    if (!reopenForFormatChange()) {
-                        std::cerr << "[DirettaSync] Failed to reopen for format change" << std::endl;
-                        return false;
+                    // Different clock family or low-rate: full teardown + fresh reopen
+                    std::cout << "[DirettaSync] Format change - full teardown" << std::endl;
+
+                    // Clear any pending silence requests
+                    m_silenceBuffersRemaining = 0;
+
+                    // Stop playback and disconnect
+                    stop();
+                    disconnect(true);
+
+                    // CRITICAL: Stop worker thread BEFORE closing SDK to prevent use-after-free
+                    m_running = false;
+                    {
+                        std::lock_guard<std::mutex> lock(m_workerMutex);
+                        if (m_workerThread.joinable()) {
+                            m_workerThread.join();
+                        }
                     }
+
+                    // Now safe to close SDK - worker thread is stopped
+                    DIRETTA::Sync::close();
+
+                    m_open = false;
+                    m_playing = false;
+                    m_paused = false;
+
+                    // Mark SDK as closed — will be freshly reopened via openSyncConnection()
+                    m_sdkOpen = false;
+
+                    // Wait for target to process the format change
+                    int resetDelayMs = 200;
+                    std::cout << "[DirettaSync] Waiting " << resetDelayMs
+                              << "ms for target to reset..." << std::endl;
+                    interruptibleWait(m_transitionMutex, m_transitionCv, m_transitionWakeup, resetDelayMs);
                 }
             }
             needFullConnect = true;
         }
+    }
+
+    // Reopen SDK if it was closed during format transition
+    // Using openSyncConnection() ensures a completely fresh SDK state,
+    // preventing state accumulation across multiple format changes.
+    if (!m_sdkOpen) {
+        std::cout << "[DirettaSync] Reopening SDK via openSyncConnection()..." << std::endl;
+        if (!openSyncConnection()) {
+            std::cerr << "[DirettaSync] Failed to reopen SDK" << std::endl;
+            return false;
+        }
+        std::cout << "[DirettaSync] SDK reopened fresh" << std::endl;
     }
 
     // Full reset for first open or after format change reopen
