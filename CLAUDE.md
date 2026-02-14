@@ -95,7 +95,7 @@ struct sq_format_header {
 2. Validates "SQFH" magic
 3. Compares with current format — if changed, closes and reopens Diretta
 4. If same format (gapless), continues streaming without reopen
-5. Burst-fills ring buffer, then streams with rate limiting
+5. Burst-fills ring buffer, then streams with consumer-driven flow control
 6. Peeks for next header before each audio read
 
 ## Code Style

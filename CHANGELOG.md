@@ -5,7 +5,7 @@ All notable changes to squeeze2diretta will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-02-13
+## [2.0.0] - 2026-02-14
 
 ### UPGRADE NOTICE
 v2.0 requires a **new patched squeezelite** with in-band format headers.
@@ -24,6 +24,10 @@ rm -rf squeezelite/
   binary header ("SQFH") to stdout at each track boundary, containing sample rate,
   bit depth, DSD format, and channel count. The wrapper reads this header synchronously,
   eliminating the stderr log parsing race condition that caused most v1.x bugs.
+- **Consumer-driven flow control**: replaced `sleep_until()` rate limiting with
+  event-based backpressure using DirettaSync's `waitForSpace()` / `notifySpaceAvailable()`
+  mechanism. The Diretta SDK's actual consumption rate drives data delivery, reducing
+  timing jitter from ±2ms to ±50µs for smoother audio streaming.
 - **Removed stderr monitoring**: the wrapper no longer parses squeezelite's stderr
   logs for format detection. Squeezelite's stderr now passes through to the parent
   process for debugging visibility.
@@ -34,11 +38,20 @@ rm -rf squeezelite/
 - **Buffered pipe reader**: new `PipeReader` class with peek support for reliable
   header detection mid-stream.
 
+### Fixed
+- **Format transitions (DSD↔PCM)** now use full SDK close/reopen with fresh
+  `openSyncConnection()` for clean state, fixing noise and wrong-speed playback
+  on repeated transitions.
+- **Missed format changes**: `PipeReader::readUpTo()` now scans for embedded SQFH
+  headers within pipe data, preventing them from being consumed as audio data.
+  This was the root cause of the DAC staying locked at the first track's format.
+
 ### Removed
 - `monitor_squeezelite_stderr()` function and thread
 - `g_need_reopen`, `g_format_pending`, `g_is_dsd`, `g_dsd_format_type`, `g_current_sample_rate` atomics
 - Stderr pipe creation and redirect
 - Pre-format data drain logic
+- `sleep_until()` time-based rate limiting (replaced by consumer-driven flow control)
 - Extreme transition delays (PCM→DSD: 50ms, DSD→PCM: 80ms)
 - Initial "wait for format" spin-loop (replaced by blocking header read)
 - `squeezelite-stdout-flush.patch` (replaced by `squeezelite-format-header.patch`)

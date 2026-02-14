@@ -116,7 +116,7 @@ This tool acts as a **wrapper** that:
 ### Low-Latency Architecture
 - **DirettaSync v2.0**: Lock-free ring buffers, SIMD optimizations
 - **Direct pipe**: Squeezelite stdout → squeeze2diretta (minimal overhead)
-- **Dynamic rate limiting**: Precise timing for smooth playback
+- **Consumer-driven flow control**: Diretta SDK consumption rate drives data delivery (±50µs jitter)
 
 ### Network Optimization
 - **Adaptive packet sizing**: Synchronized with Diretta SDK
@@ -536,4 +536,4 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Enjoy native DSD and hi-res PCM streaming from your LMS library!**
 
-*Last updated: 2026-02-13*
+*Last updated: 2026-02-14*
