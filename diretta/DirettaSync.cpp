@@ -58,8 +58,8 @@ public:
         if (reconfiguring.load(std::memory_order_acquire)) {
             return;
         }
-        // C2: acquire ensures increment visible to beginReconfigure() before ring ops
-        users_.fetch_add(1, std::memory_order_acquire);
+        // C2: acq_rel ensures increment is visible to beginReconfigure() on all architectures
+        users_.fetch_add(1, std::memory_order_acq_rel);
         if (reconfiguring.load(std::memory_order_acquire)) {
             // C2: bail-out - never entered guarded section, relaxed is safe
             users_.fetch_sub(1, std::memory_order_relaxed);
@@ -1460,6 +1460,33 @@ float DirettaSync::getBufferLevel() const {
     size_t size = m_ringBuffer.size();
     if (size == 0) return 0.0f;
     return static_cast<float>(m_ringBuffer.getAvailable()) / static_cast<float>(size);
+}
+
+void DirettaSync::dumpStats() const {
+    std::cout << "\n════════════════════════════════════════" << std::endl;
+    std::cout << "[DirettaSync] Runtime Statistics" << std::endl;
+    std::cout << "════════════════════════════════════════" << std::endl;
+    std::cout << "  State:       "
+              << (m_playing.load(std::memory_order_relaxed) ? "PLAYING" :
+                  m_paused.load(std::memory_order_relaxed) ? "PAUSED" :
+                  m_open.load(std::memory_order_relaxed) ? "OPEN" : "STOPPED")
+              << std::endl;
+    const auto& fmt = m_currentFormat;
+    if (m_open.load(std::memory_order_relaxed)) {
+        std::cout << "  Format:      " << fmt.sampleRate << "Hz/"
+                  << fmt.bitDepth << "bit/" << fmt.channels << "ch "
+                  << (fmt.isDSD ? "DSD" : "PCM") << std::endl;
+    }
+    size_t ringSize = m_ringBuffer.size();
+    size_t avail = m_ringBuffer.getAvailable();
+    float fillPct = ringSize > 0 ? (100.0f * avail / ringSize) : 0.0f;
+    std::cout << "  Buffer:      " << avail << "/" << ringSize
+              << " bytes (" << std::fixed << std::setprecision(1) << fillPct << "%)" << std::endl;
+    std::cout << "  MTU:         " << m_effectiveMTU << std::endl;
+    std::cout << "  Streams:     " << m_streamCount.load(std::memory_order_relaxed) << std::endl;
+    std::cout << "  Pushes:      " << m_pushCount.load(std::memory_order_relaxed) << std::endl;
+    std::cout << "  Underruns:   " << m_underrunCount.load(std::memory_order_relaxed) << std::endl;
+    std::cout << "════════════════════════════════════════\n" << std::endl;
 }
 
 //=============================================================================
