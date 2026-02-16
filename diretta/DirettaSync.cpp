@@ -357,17 +357,25 @@ void DirettaSync::logSinkCapabilities() {
     // SDK 148: Log supported multi-stream modes
     // supportMSmode is a bitmask: bit0=MS1, bit1=MS2, bit2=MS3
     uint16_t msmode = info.supportMSmode;
-    std::cout << "[DirettaSync]   MS modes: "
+    std::cout << "[DirettaSync]   MS modes supported: "
               << ((msmode & 0x01) ? "MS1 " : "")
               << ((msmode & 0x02) ? "MS2 " : "")
               << ((msmode & 0x04) ? "MS3 " : "")
-              << (msmode == 0 ? "(none)" : "")
+              << (msmode == 0 ? "(not reported by target)" : "")
               << std::endl;
+    std::cout << "[DirettaSync]   MS mode requested: AUTO (prefers MS3 > MS1 > NONE)" << std::endl;
 
-    // Warn if MS3 (our default) is not supported
-    if (!(msmode & 0x04) && msmode != 0) {
-        std::cerr << "[DirettaSync] WARNING: Target does not support MS3 mode (using MS3 anyway)" << std::endl;
+    // Deduce active mode from AUTO negotiation logic:
+    // AUTO = MS3|MS1, SDK tries MS3 first, then MS1, then NONE
+    const char* activeMode = "NONE";
+    if (msmode & 0x04) {
+        activeMode = "MS3";
+    } else if (msmode & 0x01) {
+        activeMode = "MS1";
+    } else if (msmode == 0) {
+        activeMode = "NONE (target did not report supported modes)";
     }
+    std::cout << "[DirettaSync]   MS mode active: " << activeMode << std::endl;
 }
 
 //=============================================================================
