@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `fetch_add` from `memory_order_acquire` to `memory_order_acq_rel`
 - Ensures the increment is visible to the reconfiguration thread on all architectures (ARM64)
 
+### Added (ARM Architecture)
+
+**ARM NEON SIMD Format Conversions:**
+- Hand-optimized NEON intrinsics for all PCM and DSD format conversions on ARM64
+- PCM: `convert24BitPacked` (LSB/MSB), `convert16To32` using `vzip`/`vshrn`/`vmovn` intrinsics
+- DSD: all 4 conversion modes (Passthrough, BitReverse, ByteSwap, BitReverseSwap) using `vzip1q_u32`/`vzip2q_u32` interleaving
+- Bit reversal via `vqtbl1q_u8` LUT-based nibble swap, byte swap via `vrev32q_u8`
+- Automatic detection via `DIRETTA_HAS_NEON` macro (`__aarch64__` + `__ARM_NEON`)
+- Fallback to scalar code when NEON is not available
+- Ported from DirettaRendererUPnP v2.0.4
+
 ### Changed
 
 **Production Build in install.sh:**
