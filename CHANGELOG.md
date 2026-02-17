@@ -5,7 +5,7 @@ All notable changes to squeeze2diretta will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.1] - Unreleased
+## [2.0.1] - 2026-02-17
 
 ### Added
 
@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Uses "negotiated" wording to clarify the mode is inferred from AUTO algorithm + target capabilities
 
 ### Fixed
+
+**Squeezelite 100% CPU When Idle:**
+- The output thread in `output_stdout.c` was spinning without sleep when no audio data was available
+- Added `usleep(10000)` in the two idle paths (before first track, and between tracks)
+- CPU usage drops from 100% to ~0% when idle, with no audible impact during playback
+- Requires rebuilding squeezelite with the updated `squeezelite-format-header.patch`
 
 **Atomic Ordering Fix in RingAccessGuard:**
 - Changed `fetch_add` from `memory_order_acquire` to `memory_order_acq_rel`

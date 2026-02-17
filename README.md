@@ -246,6 +246,35 @@ See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
 
 ---
 
+### Upgrading from v2.0.0 to v2.0.1
+
+v2.0.1 updates the squeezelite patch to fix a **100% CPU usage when idle** bug. You **must** rebuild squeezelite. Your configuration file is compatible and does not need changes.
+
+```bash
+# 1. Stop the service
+sudo systemctl stop squeeze2diretta
+
+# 2. Pull the latest version
+cd squeeze2diretta
+git pull
+
+# 3. Rebuild squeezelite with updated patch
+rm -rf squeezelite/
+./setup-squeezelite.sh
+
+# 4. Rebuild squeeze2diretta
+cd build
+cmake ..
+make
+
+# 5. Restart the service
+sudo systemctl start squeeze2diretta
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list of changes (centralized logging, ARM NEON SIMD, runtime statistics via SIGUSR1).
+
+---
+
 ### Option B: Manual Installation
 
 If you prefer manual control, follow these steps:
